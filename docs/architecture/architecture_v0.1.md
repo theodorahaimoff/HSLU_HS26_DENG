@@ -199,16 +199,18 @@ decided for the final milestone based on the expected query patterns.
 
 | Area | Lead | Support |
 |---|---|---|
-| Transport ingestion (Ist-Daten, archive backfill, Lucerne rail filter) | Emre Sen | Theodora Haimoff |
-| Stop metadata (Service Points v2) and stop-to-weather-station mapping | Emre Sen | Theodora Haimoff |
-| Weather ingestion (STAC API, stations, parameters) | Theodora Haimoff | Emre Sen |
+| Transport ingestion (Ist-Daten, archive backfill, Lucerne rail filter, completeness profiling) | Theodora Haimoff | Emre Sen |
+| Stop list (Service Points v2 filters) and stop-to-weather-station mapping | Theodora Haimoff | Emre Sen |
+| Weather ingestion (STAC API, stations, parameters, data inventory check) | Emre Sen | Theodora Haimoff |
 | Weather type and severity classification | Theodora Haimoff | Emre Sen |
 | Docker Compose and PostgreSQL | Emre Sen | Theodora Haimoff |
-| Orchestration (schedules, retries, backfills) | Theodora Haimoff | Emre Sen |
-| Transformations and data model | Shared | – |
-| Terraform and GCP setup (final) | Shared | – |
-| Streamlit dashboard | Shared | – |
-| Documentation and architecture updates | Shared | – |
+| Orchestration (schedules, retries, backfills) | Emre Sen | Theodora Haimoff |
+| First transformation (stop role, arrival/departure delay, weather join) | Theodora Haimoff | Emre Sen |
+| Terraform, GCP setup and cloud ingestion to GCS; partitioning and clustering | Emre Sen | Theodora Haimoff |
+| Loading GCS into BigQuery staging; data-quality checks | Theodora Haimoff | Emre Sen |
+| Curated data model, idempotent reruns, verification queries | Emre Sen | Theodora Haimoff |
+| Streamlit dashboard (findings and current-risk views) | Theodora Haimoff | Emre Sen |
+| Dashboard container, documentation and architecture updates | Emre Sen | Theodora Haimoff |
 
 **Way of working:** each member pushes their work directly to the main branch every week.
 The other member then reviews the pushed changes (reading the code and running it locally)

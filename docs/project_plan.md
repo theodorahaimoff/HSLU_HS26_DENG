@@ -52,7 +52,7 @@ A = Emre Sen, B = Theodora Haimoff. Completed items are checked off in this file
 - [ ] Data-quality checks (e.g. duplicates, missing hours, share of forecast-only times) (B)
 - [ ] Verification queries answering the analytical questions (A + B)
 - [ ] Final architecture incl. evolution from v0.1 (A + B)
-- [ ] Streamlit dashboard: findings view on the aggregate table (A)
+- [ ] Streamlit dashboard: findings view on the aggregate table (B)
 - [ ] Streamlit dashboard: current-risk view with latest MeteoSwiss measurement (B)
 - [ ] Dashboard container in Docker Compose, documented setup (A + B)
 - [ ] Known limitations documented (A + B)
