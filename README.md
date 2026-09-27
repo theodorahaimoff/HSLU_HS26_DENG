@@ -1,7 +1,7 @@
 # Weather Impact on Rail Punctuality in the Canton of Lucerne
 
 **DENG HS26 – Data Engineering Project, Hochschule Luzern** \
-Team · Emre Sen · Theodora Haimoff
+Emre Sen · Theodora Haimoff
 
 
 **In short:** a batch pipeline that joins actual train operations data with official
@@ -51,7 +51,7 @@ are **correlations and conditional probabilities, not causal effects**. See
 | Dimension | Scope |
 |---|---|
 | Transport mode | Rail only (`PRODUKT_ID = Zug`) |
-| Region | Stops located in the canton of Lucerne |
+| Region | The 51 rail stops in the canton of Lucerne |
 | Period | From July 2025 (Ist-Daten v2) onwards |
 | Weather granularity | Hourly |
 | Weather types | Rain, wind, heat, frost (measured); snow, thunderstorms, icy conditions (derived) |
@@ -65,19 +65,15 @@ with incomplete real-time data. Rail completeness is verified by a profiling ste
 | Source | Content | Access | Update |
 |---|---|---|---|
 | [opentransportdata.swiss – Ist-Daten v2](https://data.opentransportdata.swiss/dataset/ist-daten-v2) | Scheduled vs. actual arrival/departure times, cancellations, per stop event | Daily CSV download; monthly ZIP [archive](https://archive.opentransportdata.swiss/) for backfills | Daily (previous operating day) |
-| [opentransportdata.swiss – Service Points v2](https://data.opentransportdata.swiss/dataset/service-point-v2) | Stop master data incl. WGS84 coordinates, used for the canton filter and weather-station mapping ([cookbook](https://opentransportdata.swiss/en/cookbook/masterdata-cookbook/servicepoints/)) | CSV download | Daily ("today" version) |
-| [MeteoSwiss Open Data – SwissMetNet](https://opendatadocs.meteoswiss.ch/a-data-groundbased/a1-automatic-weather-stations) | Hourly precipitation, temperature, wind gusts, etc. per station | STAC API (`data.geo.admin.ch`), CSV per station | Hourly / daily / yearly files |
+| [opentransportdata.swiss – Service Points v2](https://data.opentransportdata.swiss/dataset/service-point-v2) | Stop master data incl. canton and WGS84 coordinates, used for the stop list and weather-station mapping ([cookbook](https://opentransportdata.swiss/en/cookbook/masterdata-cookbook/servicepoints/)) | CSV download (current-state file) | Daily |
+| [MeteoSwiss Open Data – SwissMetNet](https://opendatadocs.meteoswiss.ch/a-data-groundbased/a1-automatic-weather-stations) | Hourly precipitation, temperature, wind gusts per station (5 stations), plus station metadata | STAC API (`data.geo.admin.ch`), CSV per station | Historical (yearly), recent (daily), now |
 
 Details (schema, volume, quality risks): [docs/data_sources.md](docs/data_sources.md)
 
 ## 4. Architecture (v0.1)
 
 ```mermaid
----
-config:
-  block:
-    padding: 14
----
+%%{init: {"block": {"padding": 10}}}%%
 block-beta
   columns 4
   block:EXT:1
@@ -149,6 +145,8 @@ Full description, ingestion strategy and division of responsibilities:
 .
 ├── README.md
 ├── CONTRIBUTING.md                 # workflow and commit message convention
+├── LICENSE                         # Apache 2.0 (code; data keeps its source licences)
+├── .gitignore                      # secrets, data files, Terraform state, IDE files
 ├── docs/
 │   ├── use_case.md                 # problem, users, questions, data product
 │   ├── data_sources.md             # provenance, schema, volume, quality risks
@@ -181,10 +179,11 @@ convention ([Conventional Commits](https://www.conventionalcommits.org/)) are de
 - Journeys without real-time data are missing entirely from Ist-Daten.
 - Automatic snow-depth measurements are not quality-checked by MeteoSwiss; snow is derived from precipitation and temperature.
 - Thunderstorms and icy conditions are not measured directly and are approximated.
-- Weather is measured at a few stations and may not represent conditions at every stop.
+- Weather is measured at five stations (up to 14 km from a stop) and may not represent conditions at every stop.
+- Departure delays at a train's origin are usually small; departures and arrivals are therefore analysed separately (relevant e.g. for Luzern, a terminal station).
 - The dashboard's "current risk" is not a live train-delay prediction: it combines the latest weather measurement with historical probabilities computed by the batch pipeline.
 
 ## 9. Data attribution
 
 - Transport data: Open Data Platform Mobility Switzerland (opentransportdata.swiss).
-- Weather data: **Source: MeteoSwiss**.
+- Weather data: Source: MeteoSwiss.

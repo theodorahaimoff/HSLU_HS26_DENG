@@ -4,7 +4,7 @@
 
 | Week | Milestone | Deliverable / deadline |
 |---|---|---|
-| 3 | Initial pitch | README, data sources, use case, Architecture v0.1, this plan; 10-min pitch |
+| 3 | Initial pitch | README, data sources, use case, Architecture v0.1, this plan; 5-min pitch |
 | 6 | Midterm submission | Repository link + commit hash/tag via ILIAS, **Thu 22 Oct 2026, 15:30** |
 | 7 | Midterm defence | 10-min question-only oral defence |
 | 9 | Midterm peer reviews | Two review documents via ILIAS, **12 Nov 2026** |
@@ -18,23 +18,25 @@ A = Emre Sen, B = Theodora Haimoff. Completed items are checked off in this file
 
 ### Milestone 1 – Initial pitch (Week 3)
 
-- [ ] Create repository, grant access to instructors (A)
-- [ ] README, use case and data source documentation (A + B)
-- [ ] Architecture v0.1 and division of responsibilities (A + B)
-- [ ] Download sample Ist-Daten day and MeteoSwiss station file; confirm access works (A + B)
-- [ ] Prepare 10-minute pitch, both members presenting (A + B)
+- [x] Create repository, grant access to instructors (B)
+- [x] README, use case and data source documentation (A + B)
+- [x] Architecture v0.1 and division of responsibilities (A + B)
+- [x] Download sample Ist-Daten day and MeteoSwiss station file; confirm access works (A + B)
+- [x] Prepare 5-minute pitch, both members presenting (A + B)
 
 ### Midterm – Local pipeline (Weeks 4–6)
 
-- [ ] Profiling script: completeness of Lucerne rail data per operator (A)
-- [ ] Identify Lucerne rail stops and assign nearest weather station (A)
-- [ ] Transport ingestion script: one day, filtered, loaded into PostgreSQL (A)
-- [ ] Transport backfill from monthly archive (A)
-- [ ] Weather ingestion script: historical + recent hourly files into PostgreSQL (B)
+- [ ] Profiling script: completeness of Lucerne rail data per operator, arrivals and departures separately (B)
+- [ ] Stop list in code: download service points, apply the documented filters, check 51 stops (B)
+- [ ] Stop-to-weather-station mapping in code (nearest station, max. 300 m altitude difference) (B)
+- [ ] Download complete MeteoSwiss data inventory; confirm the 5 stations measure all needed parameters (A)
+- [ ] Transport ingestion script: one day, filtered, loaded into PostgreSQL (B)
+- [ ] Transport backfill from monthly archive (B)
+- [ ] Weather ingestion script: historical + recent hourly files into PostgreSQL (A)
 - [ ] Docker Compose: PostgreSQL + orchestrator on a shared network (A)
-- [ ] Choose orchestrator; daily schedule, retries, backfill for both sources (B)
+- [ ] Choose orchestrator; daily schedule, retries, backfill for both sources (A)
 - [ ] Idempotent reruns (partition overwrite per day/hour) (A + B)
-- [ ] First justified transformation: delay calculation + join with hourly weather (B)
+- [ ] First justified transformation: stop role, arrival/departure delay (`REAL` only) + join with hourly weather (B)
 - [ ] `.env.example`, `.gitignore`, setup/run/verify instructions in README (A + B)
 - [ ] Architecture v0.2 with changed decisions (A + B)
 - [ ] Test reproducibility from a fresh clone before submission (A + B)
