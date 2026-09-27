@@ -1,1 +1,68 @@
+# ---------------------------------------------------------------
+# Secrets and credentials (never commit)
+# ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*credentials*.json
+*service-account*.json
+*.key
+*.pem
+.streamlit/secrets.toml
+
+# ---------------------------------------------------------------
+# Data (datasets are downloaded by the pipeline, not committed)
+# ---------------------------------------------------------------
+data/*
+!data/.gitkeep
+*.csv
+*.zip
+*.parquet
+*.gz
+
+# Local Docker volumes (e.g. PostgreSQL data)
+pgdata/
+volumes/
+
+# ---------------------------------------------------------------
+# Terraform
+# ---------------------------------------------------------------
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# Note: .terraform.lock.hcl SHOULD be committed
+
+# ---------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# ---------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------
+logs/
+*.log
+
+# ---------------------------------------------------------------
+# IDE and OS
+# ---------------------------------------------------------------
 .idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

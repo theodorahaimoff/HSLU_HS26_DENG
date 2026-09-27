@@ -14,7 +14,7 @@
 
 ## Backlog
 
-A = Emre Sen, B = Theodora Haimoff. Issues will be tracked as GitHub Issues.
+A = Emre Sen, B = Theodora Haimoff. Completed items are checked off in this file.
 
 ### Milestone 1 – Initial pitch (Week 3)
 

@@ -1,7 +1,8 @@
 # Weather Impact on Rail Punctuality in the Canton of Lucerne
 
 **DENG HS26 – Data Engineering Project, Hochschule Luzern** \
-Team · _Emre Sen_ · _Theodora Haimoff_
+Team · Emre Sen · Theodora Haimoff
+
 
 **In short:** a batch pipeline that joins actual train operations data with official
 MeteoSwiss weather measurements for the canton of Lucerne, and a **Streamlit dashboard**
@@ -72,20 +73,72 @@ Details (schema, volume, quality risks): [docs/data_sources.md](docs/data_source
 ## 4. Architecture (v0.1)
 
 ```mermaid
-flowchart LR
-    A[Ist-Daten v2] --> I[Batch ingestion<br/>Python]
-    SP[Service Points v2] --> I
-    B[MeteoSwiss<br/>STAC API] --> I
-    I --> L[(PostgreSQL<br/>local, midterm)]
-    I --> G[(GCS data lake<br/>raw)]
-    G --> T[Transformations]
-    T --> W[(BigQuery<br/>curated tables)]
-    W --> D[Streamlit dashboard<br/>findings + current risk]
-    B -. latest measurement .-> D
-    D --> U((Commuters /<br/>analysts))
-    O[Orchestrator] -.schedules.-> I
-    O -.schedules.-> T
+---
+config:
+  block:
+    padding: 14
+---
+block-beta
+  columns 4
+  block:EXT:1
+    columns 1
+    T1["External sources"]
+    S1["<b>Ist-Daten v2</b><br/>opentransportdata.swiss"]
+    space
+    S2["<b>Service Points v2</b><br/>opentransportdata.swiss"]
+    space
+    S3["<b>MeteoSwiss</b><br/>STAC API, hourly data"]
+  end
+  block:DC:1
+    columns 1
+    T2["Local · Docker Compose"]
+    O["<b>Orchestrator</b><br/>schedule, retries, backfills"]
+    space
+    I["<b>Ingestion jobs</b><br/>Python"]
+    space
+    P[("<b>PostgreSQL</b><br/>midterm")]
+  end
+  block:GCP:1
+    columns 1
+    T3["Google Cloud"]
+    TF["<b>Terraform</b><br/>provisions bucket + dataset"]
+    space
+    G[("<b>GCS bucket</b><br/>raw data lake")]
+    space
+    B[("<b>BigQuery</b><br/>staging + curated tables")]
+  end
+  block:SV:1
+    columns 1
+    T4["Serving"]
+    space
+    space
+    M["<b>MeteoSwiss</b><br/>latest measurement"]
+    space
+    D["<b>Streamlit dashboard</b><br/>for commuters + analysts"]
+  end
+
+  S1 --> I
+  S2 --> I
+  S3 --> I
+  O -- "⚙ triggers" --> I
+  I -- "load" --> P
+  I -- "raw files" --> G
+  TF -- "⚙ provisions" --> G
+  G -- "SQL transformations" --> B
+  B --> D
+  M -- "⚡ at request time" --> D
+
+  classDef title fill:none,stroke:none,font-weight:bold
+  classDef box fill:#ffffff,stroke:#444,color:#111
+  class T1,T2,T3,T4 title
+  class S1,S2,S3,O,I,P,TF,G,B,M,D box
+  style EXT fill:#f4f4f4,stroke:#8a8a8a
+  style DC fill:#eaf2fb,stroke:#2f6db3
+  style GCP fill:#eaf6ee,stroke:#2e8b57
+  style SV fill:#f3ecfa,stroke:#8a5bb5
 ```
+
+**Legend:** unmarked arrows = data flow (batch) · ⚙ = control (the orchestrator starts jobs, Terraform provisions resources) · ⚡ = live call at request time
 
 Full description, ingestion strategy and division of responsibilities:
 [docs/architecture/architecture_v0.1.md](docs/architecture/architecture_v0.1.md)
@@ -95,6 +148,7 @@ Full description, ingestion strategy and division of responsibilities:
 ```
 .
 ├── README.md
+├── CONTRIBUTING.md                 # workflow and commit message convention
 ├── docs/
 │   ├── use_case.md                 # problem, users, questions, data product
 │   ├── data_sources.md             # provenance, schema, volume, quality risks
@@ -115,9 +169,11 @@ _To be completed for the midterm._ Planned: Docker Compose environment with Post
 and the orchestrator; credentials via `.env` (an `.env.example` will be provided; secrets
 are never committed).
 
-## 7. Project plan
+## 7. Project plan and collaboration
 
-See [docs/project_plan.md](docs/project_plan.md).
+See [docs/project_plan.md](docs/project_plan.md). Our workflow and commit message
+convention ([Conventional Commits](https://www.conventionalcommits.org/)) are described in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 8. Known risks and limitations (initial)
 
@@ -131,4 +187,4 @@ See [docs/project_plan.md](docs/project_plan.md).
 ## 9. Data attribution
 
 - Transport data: Open Data Platform Mobility Switzerland (opentransportdata.swiss).
-- Weather data: MeteoSwiss.
+- Weather data: **Source: MeteoSwiss**.

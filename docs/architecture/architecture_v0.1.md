@@ -3,69 +3,153 @@
 _Initial architecture for Milestone 1. Decisions marked **(open)** will be revisited in
 Architecture v0.2 (midterm)._
 
-## Overview
+## 1. Data engineering lifecycle
+
+The pipeline follows the data engineering lifecycle from the lecture: generation →
+ingestion → storage → transformation → serving.
 
 ```mermaid
+%%{init: {'flowchart': {'curve': 'linear', 'nodeSpacing': 25, 'rankSpacing': 35}}}%%
 flowchart LR
-    subgraph Sources
-        S1[Ist-Daten v2<br/>daily CSV + monthly archive]
-        S2[Service Points v2<br/>stop master data]
-        S3[MeteoSwiss STAC API<br/>hourly station CSV]
-    end
-
-    subgraph Orchestration
-        O[Orchestrator<br/>daily schedule, retries, backfills]
-    end
-
-    subgraph Ingestion
-        I1[Transport ingestion<br/>Python]
-        I2[Weather ingestion<br/>Python]
-    end
-
-    subgraph Local["Local (midterm)"]
-        P[(PostgreSQL)]
-    end
-
-    subgraph Cloud["Google Cloud (final, provisioned with Terraform)"]
-        G[(GCS data lake<br/>raw zone)]
-        BQ1[(BigQuery<br/>staging)]
-        BQ2[(BigQuery<br/>curated tables)]
-    end
-
-    subgraph Presentation["Presentation (final)"]
-        D1[Streamlit dashboard<br/>findings view]
-        D2[Streamlit dashboard<br/>current-risk view]
-    end
-
-    USER((Commuters /<br/>analysts))
-
-    S1 --> I1
-    S2 --> I1
-    S3 --> I2
-    I1 --> P
-    I2 --> P
-    I1 --> G
-    I2 --> G
-    G --> BQ1 --> BQ2
-    BQ2 --> D1
-    BQ2 --> D2
-    S3 -. latest measurement<br/>at request time .-> D2
-    D1 --> USER
-    D2 --> USER
-    O -.-> I1
-    O -.-> I2
-    O -.-> BQ1
+    G["<b>1 · Generation</b><br/>Operators' customer<br/>information systems<br/>MeteoSwiss stations<br/>Stop master data (atlas)"]
+    I["<b>2 · Ingestion</b><br/>Daily Ist-Daten file<br/>Hourly weather files<br/>Service points snapshot<br/>Backfill from archive"]
+    S["<b>3 · Storage</b><br/>Raw files kept unchanged<br/>Loaded tables<br/>(local DB, later<br/>cloud lake + warehouse)"]
+    T["<b>4 · Transformation</b><br/>Filter Lucerne rail<br/>Compute delays<br/>Join hourly weather<br/>Classify severity"]
+    V["<b>5 · Serving</b><br/>Curated tables<br/>Dashboard: findings<br/>+ current risk"]
+    O(["Output: delay and cancellation<br/>probability per weather<br/>type and severity"])
+    G --> I --> S --> T --> V --> O
 ```
 
-## Components
+For each stage: what happens, where the data lives, and what can go wrong.
+
+| Stage | What happens | Where it lives | What can go wrong |
+|---|---|---|---|
+| **Generation** | Operators' customer information systems record scheduled and actual times per stop; MeteoSwiss stations measure weather; atlas maintains stop master data | Source systems, published by opentransportdata.swiss and MeteoSwiss (not controlled by us) | Missing real-time data (journeys absent), forecast values instead of actual times, sensor outages, schema changes (e.g. Ist-Daten v1 → v2) |
+| **Ingestion** | Python downloads one Ist-Daten file per operating day, hourly weather files per station, and the service-points file | Source websites / STAC API → raw storage | File not yet published, failed download, changed columns, too-frequent requests to MeteoSwiss (terms of use) |
+| **Storage** | Keep raw files unchanged; load the relevant rows into tables | Midterm: PostgreSQL on a Docker volume. Final: GCS (raw) + BigQuery | Partial loads, duplicates after reruns, lost local volume |
+| **Transformation** | Filter to Lucerne rail; parse dates/times; compute delays; map stops to weather stations; align time zones; classify weather severity; aggregate | SQL tables/views in PostgreSQL (midterm), BigQuery (final) | Wrong join (time zone/DST), wrong thresholds, misleading rates from few observations |
+| **Serving** | Curated tables and the Streamlit dashboard answer the user questions | BigQuery curated tables → Streamlit | Stale data, results shown without context (baseline, number of observations) |
+
+## 2. Architecture (components)
+
+Which systems we use, where they run, and how data moves between them.
+
+```mermaid
+---
+config:
+  block:
+    padding: 
+---
+block-beta
+  columns 4
+  block:EXT:1
+    columns 1
+    T1["External sources"]
+    S1["<b>Ist-Daten v2</b><br/>opentransportdata.swiss"]
+    space
+    S2["<b>Service Points v2</b><br/>opentransportdata.swiss"]
+    space
+    S3["<b>MeteoSwiss</b><br/>STAC API, hourly data"]
+  end
+  block:DC:1
+    columns 1
+    T2["Local · Docker Compose"]
+    O["<b>Orchestrator</b><br/>schedule, retries, backfills"]
+    space
+    I["<b>Ingestion jobs</b><br/>Python"]
+    space
+    P[("<b>PostgreSQL</b><br/>midterm")]
+  end
+  block:GCP:1
+    columns 1
+    T3["Google Cloud"]
+    TF["<b>Terraform</b><br/>provisions bucket + dataset"]
+    space
+    G[("<b>GCS bucket</b><br/>raw data lake")]
+    space
+    B[("<b>BigQuery</b><br/>staging + curated tables")]
+  end
+  block:SV:1
+    columns 1
+    T4["Serving"]
+    space
+    space
+    M["<b>MeteoSwiss</b><br/>latest measurement"]
+    space
+    D["<b>Streamlit dashboard</b><br/>for commuters + analysts"]
+  end
+
+  S1 --> I
+  S2 --> I
+  S3 --> I
+  O -- "⚙ triggers" --> I
+  I -- "load" --> P
+  I -- "raw files" --> G
+  TF -- "⚙ provisions" --> G
+  G -- "SQL transformations" --> B
+  B --> D
+  M -- "⚡ at request time" --> D
+
+  classDef title fill:none,stroke:none,font-weight:bold
+  classDef box fill:#ffffff,stroke:#444,color:#111
+  class T1,T2,T3,T4 title
+  class S1,S2,S3,O,I,P,TF,G,B,M,D box
+  style EXT fill:#f4f4f4,stroke:#8a8a8a
+  style DC fill:#eaf2fb,stroke:#2f6db3
+  style GCP fill:#eaf6ee,stroke:#2e8b57
+  style SV fill:#f3ecfa,stroke:#8a5bb5
+```
+
+**Legend:** unmarked arrows = data flow (batch) · ⚙ = control (the orchestrator starts jobs, Terraform provisions resources) · ⚡ = live call at request time
+
+- **External sources** are consumed, not controlled: we only read their published files.
+- **Local (Docker Compose):** the orchestrator schedules the ingestion jobs (and later the
+  transformations) and handles retries and backfills. For the midterm, data is loaded into
+  PostgreSQL and the first transformation runs there.
+- **Google Cloud (final):** the GCS bucket and BigQuery dataset are provisioned with
+  Terraform (run from our machines; shown in the cloud column because it defines those
+  resources). Raw files go to GCS; SQL transformations produce staging and curated tables in
+  BigQuery.
+- **Serving:** the Streamlit dashboard (run as a container, used by commuters and analysts)
+  queries the curated tables and,
+  for the current-risk view, fetches the latest MeteoSwiss measurement at request time.
+
+## Storage decisions by workload
+
+Storage is chosen by workload, not by familiarity. The technologies below are the ones
+required by the project description; the table explains why each fits its workload.
+
+| Workload | What matters most | Storage | Data temperature |
+|---|---|---|---|
+| Raw source files (daily Ist-Daten, weather files, service points) | Cheap, durable, keep everything for reprocessing and backfills | Object storage: GCS (final); local files only for development | Cold: read again only for reruns/backfills |
+| Curated and aggregated tables | Efficient repeatable SQL and aggregations | Warehouse: BigQuery (final); PostgreSQL for the smaller local setup (midterm) | Hot: queried by the dashboard |
+| Live events | – | Not needed: sources publish daily/hourly files, so daily batch is sufficient. A streaming platform would add cost and complexity without benefit | – |
+
+In the final solution, storage (GCS, BigQuery storage) and compute (BigQuery queries,
+pipeline runs) are separated: raw data stays in cheap storage, and compute is only used
+when the pipeline runs or the dashboard queries.
+
+## Reliability considerations
+
+| Concept | In this project | Design decision |
+|---|---|---|
+| SLA / freshness | The dashboard should show data up to the previous operating day each morning (exact time depends on when Ist-Daten is published **(to verify)**) | Daily scheduled run with retries; freshness timestamp shown in the dashboard |
+| Scalability | The national Ist-Daten file is large, but only a small part is Lucerne rail; history grows every day | Filter early for the curated tables; partition by operating day; keep raw files in object storage |
+| Schema evolution | Ist-Daten v1 was replaced by v2; service points moved to v2; MeteoSwiss may add parameters | Only v2 from July 2025; explicit column selection and validation at ingestion so unexpected changes fail loudly instead of silently |
+| Metadata and discovery | Users must know what "delay", "severe rain" or a station mapping means | Data dictionary and documented thresholds in the repository; lineage columns (source file, ingestion time) in every table |
+
+## Technology overview
+
+Technologies marked (required) are prescribed by the project description; the others are
+our choice and are justified where they are used.
 
 | Component | Midterm (local) | Final (cloud) |
 |---|---|---|
 | Ingestion | Python scripts, one module per source | Same scripts, writing to GCS |
-| Storage | PostgreSQL in Docker | GCS bucket (raw data lake) + BigQuery dataset |
-| Transformation | SQL in PostgreSQL (at least one justified transformation) | SQL / dbt in BigQuery **(open)** |
-| Orchestration | Orchestrator in Docker Compose **(tool open, e.g. Kestra or Airflow)** | Same orchestrator, extended to cloud tasks |
-| Infrastructure | Docker Compose, shared network | Terraform for GCS bucket and BigQuery dataset |
+| Storage | PostgreSQL in Docker (required) | GCS bucket + BigQuery dataset (required) |
+| Transformation | SQL in PostgreSQL (at least one justified transformation) | SQL in BigQuery; a transformation framework only if introduced in the course **(open)** |
+| Orchestration | Workflow orchestrator in Docker Compose (required; **tool not yet chosen** – will follow the tool introduced in the course) | Same orchestrator, extended to cloud tasks |
+| Infrastructure | Docker Compose, shared network (required) | Terraform for GCS bucket and BigQuery dataset (required) |
 | Presentation | – | Streamlit dashboard reading curated BigQuery tables, run as a container in Docker Compose **(hosting open)** |
 | Secrets | `.env` (not committed), `.env.example` provided | Service-account key / env variables, never committed |
 
@@ -127,13 +211,16 @@ decided for the final milestone based on the expected query patterns.
 | Streamlit dashboard | Shared | – |
 | Documentation and architecture updates | Shared | – |
 
-Both team members review each other's pull requests so that both understand the complete
-architecture, as required for the oral defences.
+**Way of working:** each member pushes their work directly to the main branch every week.
+The other member then reviews the pushed changes (reading the code and running it locally)
+and gives feedback, so that both understand the complete architecture, as required for the
+oral defences. Commit messages follow the Conventional Commits convention (see
+[CONTRIBUTING.md](../../CONTRIBUTING.md)), so contributions stay traceable in the Git history.
 
 ## Open decisions
 
-- Orchestrator choice (e.g. Kestra vs. Airflow).
-- Transformation tool in the cloud (plain BigQuery SQL vs. dbt).
+- Orchestrator tool (to be aligned with the course).
+- Transformation tooling in the cloud (plain BigQuery SQL unless the course introduces a framework).
 - Exact delay threshold and severity thresholds.
 - Final weather stations after checking coverage and data availability.
 - Dashboard hosting (local container only vs. a hosted deployment).

@@ -6,6 +6,19 @@ confirmed during the profiling step before the midterm.
 
 ---
 
+## Source evaluation summary
+
+| Question | Ist-Daten v2 | Service Points v2 | MeteoSwiss SwissMetNet |
+|---|---|---|---|
+| Source type | Operators' customer information systems, published as files | National stop master data (atlas), published as files | Automatic sensor network, published as files via STAC API |
+| What does one row represent? | One stop event: one journey at one stop on one operating day | One version of one service point (stop) | One station × one time interval (we use hourly) |
+| How often / how much? | One file per day for all of Switzerland; large **(size to verify)** | Daily "today" file; small | Hourly values per station; small |
+| Persisted or ephemeral? | Persisted: monthly archive back to 2016 | Persisted, including an "all versions" history | Persisted: historical, recent and now files |
+| Schema enforced? | No: CSV has a structure but types are not enforced (dates as text, flags as strings), so schema is applied and validated in our pipeline (schema-on-read) | No (CSV), validated in our pipeline | No (CSV), validated in our pipeline |
+| Schema changes | v1 → v2 in 2025/2026 (new identifiers, foreign stops) | v1 → v2 in 2026 | New parameters/stations possible |
+| Load pattern | Incremental: one new file per day (delta of the completed day), backfill from archive | Full snapshot, reloaded periodically | Historical full load once, then incremental daily; recent values may be revised |
+| Load on source | One download per day | One download per week | Few requests per day; MeteoSwiss terms of use prohibit excessive downloading |
+
 ## 1. Ist-Daten v2 (actual train operations)
 
 | Aspect | Description |
