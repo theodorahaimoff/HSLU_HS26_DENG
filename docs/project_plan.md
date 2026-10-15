@@ -26,15 +26,13 @@ A = Emre Sen, B = Theodora Haimoff. Completed items are checked off in this file
 
 ### Midterm – Local pipeline (Weeks 4–6)
 
-- [ ] Profiling script: completeness of Lucerne rail data per operator, arrivals and departures separately (B)
 - [ ] Stop list in code: download service points, apply the documented filters, check 51 stops (B)
 - [ ] Stop-to-weather-station mapping in code (nearest station, max. 300 m altitude difference) (B)
 - [ ] Download complete MeteoSwiss data inventory; confirm the 5 stations measure all needed parameters (A)
 - [ ] Transport ingestion script: one day, filtered, loaded into PostgreSQL (B)
-- [ ] Transport backfill from monthly archive (B)
 - [ ] Weather ingestion script: historical + recent hourly files into PostgreSQL (A)
 - [ ] Docker Compose: PostgreSQL + orchestrator on a shared network (A)
-- [ ] Choose orchestrator; daily schedule, retries, backfill for both sources (A)
+- [ ] Kestra flow: daily schedule, retries, backfill for both sources (A)
 - [ ] Idempotent reruns (partition overwrite per day/hour) (A + B)
 - [ ] First justified transformation: stop role, arrival/departure delay (`REAL` only) + join with hourly weather (B)
 - [ ] `.env.example`, `.gitignore`, setup/run/verify instructions in README (A + B)
@@ -44,6 +42,9 @@ A = Emre Sen, B = Theodora Haimoff. Completed items are checked off in this file
 ### Final – Cloud pipeline (Weeks 8–13)
 
 - [ ] Terraform: GCS bucket and BigQuery dataset (A)
+- [ ] Profiling script: completeness of Lucerne rail data per operator, arrivals and departures separately (B)
+- [ ] Transport backfill from monthly archive (B)
+- [ ] dbt models for staging and curated tables (A + B)
 - [ ] Ingestion writes directly to GCS (no local dependency) (A)
 - [ ] Load raw data from GCS into BigQuery staging (B)
 - [ ] Weather type and severity classification (B)
