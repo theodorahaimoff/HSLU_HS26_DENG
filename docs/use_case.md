@@ -16,7 +16,7 @@ stations and times of day are most sensitive to weather.
 
 ## Analytical questions
 
-1. What is the probability of a train being late (e.g. > 3 min) at departure and at arrival, for each weather type and severity level, compared with calm/dry conditions?
+1. What is the probability of a train being late (e.g. 3 min or more) at departure and at arrival, for each weather type and severity level, compared with calm/dry conditions?
 2. What is the typical delay (median, 90th percentile) under each weather type and severity?
 3. At which severity level do cancellation rates increase noticeably?
 4. Which stations and lines in the canton are most weather-sensitive?
@@ -54,9 +54,11 @@ warnings (checked September 2026). Severity is therefore derived from the measur
 **How the scale is anchored:** the thresholds follow the warning criteria MeteoSwiss
 publishes for its danger levels. Important for the implementation:
 
-- The official rain and snow thresholds are **totals over 12 to 72 hours** (e.g. level 2
-  continuous rain: 50 mm in 12 h or 70 mm in 24 h), so the pipeline computes rolling totals
-  from the hourly values before classifying.
+- The official rain and snow thresholds are **totals over 12 to 72 hours** and differ by region
+  (e.g. level 2 continuous rain north of the Alps, which includes Lucerne: 20 mm in 12 h or
+  30 mm in 24 h), so the pipeline computes rolling totals from the hourly values before classifying.
+- Snow thresholds also depend on altitude (below or above 800 m). Escholzmatt (853 m) is the only
+  stop above 800 m, so the classification uses each stop's own altitude.
 - Short intense rain in thunderstorms is defined **per hour** (30–50 mm/h and > 50 mm/h),
   which can be applied to the hourly values directly.
 - MeteoSwiss only warns from **level 2** upwards. Everyday conditions below that (e.g. light

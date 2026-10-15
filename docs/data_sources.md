@@ -1,8 +1,9 @@
 # Data Sources
 
 This document describes provenance, access method, format, schema, update frequency,
-volume and data-quality risks for each source. Items marked **(to verify)** will be
-confirmed during the profiling step before the midterm.
+volume and data-quality risks for each source. The figures were checked against real files in
+[notebooks/01_explore_sources.ipynb](../notebooks/01_explore_sources.ipynb) (operating days
+8 October and 29 September 2026). Items marked **(to verify)** are still open.
 
 ---
 
@@ -12,12 +13,12 @@ confirmed during the profiling step before the midterm.
 |---|---|---|---|
 | Source type | Operators' customer information systems, published as files | National stop master data (atlas), published as files | Automatic sensor network, published as files via STAC API |
 | What does one row represent? | One stop event: one journey at one stop on one operating day | One currently valid service point (stop) | One station × one time interval (we use hourly) |
-| How often / how much? | One file per day for all of Switzerland; about 2.2 million rows per day | Daily current-state file; small (51 relevant rows) | Hourly values per station; small |
+| How often / how much? | One file per day for all of Switzerland; about 2.6 million rows (658 MB) per day | Daily current-state file, about 60,000 rows (27 MB), 51 relevant | Hourly values per station; small |
 | Persisted or ephemeral? | Persisted: monthly archive back to 2016 | Persisted; an "all versions" file keeps the history, we use the current-state file | Persisted: historical, recent and now files |
 | Schema enforced? | No: CSV has a structure but types are not enforced (dates as text, flags as strings), so schema is applied and validated in our pipeline (schema-on-read) | No (CSV), validated in our pipeline | No (CSV), validated in our pipeline |
 | Schema changes | v1 → v2 in 2025/2026 (new identifiers, foreign stops) | v1 → v2 in 2026 | New parameters/stations possible |
-| Load pattern | Incremental: one new file per day (delta of the completed day), backfill from archive | Full snapshot, reloaded periodically | Historical full load once, then incremental daily; recent values may be revised |
-| Load on source | One download per day | One download per week | Few requests per day; MeteoSwiss terms of use prohibit excessive downloading |
+| Load pattern | Batch, pull, full load of each day's file, replacing that day (not CDC); backfill from the archive | Full snapshot, reloaded when the stops change | Historical full load once, then daily; the day is reloaded so revisions are picked up |
+| Load on source | One download per day | On demand (setup flow) | Few requests per day; MeteoSwiss terms of use prohibit excessive downloading |
 
 ## 1. Ist-Daten v2 (actual train operations)
 
@@ -26,10 +27,10 @@ confirmed during the profiling step before the midterm.
 | Provider | Open Data Platform Mobility Switzerland, operated by SBB on behalf of the Federal Office of Transport |
 | Dataset | [Ist-Daten v2](https://data.opentransportdata.swiss/dataset/ist-daten-v2) – [cookbook](https://opentransportdata.swiss/en/cookbook/historic-and-statistics-cookbook/actual-data/) |
 | Content | Every stop event of every journey in Switzerland: scheduled and actual/forecast arrival and departure times, cancellation flag |
-| Access | HTTPS download of one CSV per operating day (current month); monthly ZIP files at [archive.opentransportdata.swiss](https://archive.opentransportdata.swiss/) for historical data |
+| Access | HTTPS download of one CSV per operating day. The dataset page lists a rolling window of the last 50 days; each file has its own resource ID, so the link is read from the page. Older days: monthly **v2** ZIPs (`ist-daten-v2-YYYY-MM.zip`) at [archive.opentransportdata.swiss](https://archive.opentransportdata.swiss/actual_data_archive.htm), identical to the daily files (checked for 29 September 2026) |
 | Format | CSV |
-| Update frequency | Daily, for the previous operating day; archive updated by the first working day of the following month |
-| Volume | One file per day for all of Switzerland: about 2.2 million rows (sample day, September 2026). Only a small fraction is rail in the canton of Lucerne (Luzern station alone: about 1,000 rows per day). |
+| Update frequency | Daily, for the previous operating day, available by about 05:15 Swiss time; files can be republished later. Archive updated by the first working day of the following month |
+| Volume | One file per day for all of Switzerland: about 2.6 million rows, 658 MB (8 October 2026). Rail at our 51 stops: 5,532 rows (0.21 %); Luzern station alone: 842 rows. |
 | Scope used | Rail (`PRODUKT_ID = Zug`) at stops in the canton of Lucerne, from July 2025 |
 
 ### Relevant fields
@@ -44,7 +45,7 @@ confirmed during the profiling step before the midterm.
 | `BPUIC`, `HALTESTELLEN_NAME`, `SLOID` | Stop identifiers and name | Join to stop metadata (`BPUIC` = service points `number`) |
 | `ANKUNFTSZEIT`, `ABFAHRTSZEIT` | Scheduled arrival / departure | Delay calculation |
 | `AN_PROGNOSE`, `AB_PROGNOSE` | Actual or last forecast arrival / departure | Delay calculation |
-| `AN_PROGNOSE_STATUS`, `AB_PROGNOSE_STATUS` | Source of the actual time: `REAL` = measured, `PROGNOSE` = last unconfirmed forecast; empty if there is no real-time value | Data-quality filter: delays only from `REAL` |
+| `AN_PROGNOSE_STATUS`, `AB_PROGNOSE_STATUS` | Source of the actual time: `REAL` = measured, `PROGNOSE` = last unconfirmed forecast, `UNBEKANNT` (undocumented) = exactly the cancelled trains; empty if there is no scheduled time | Flag per row; delays only from `REAL` (other rows are kept with a NULL delay) |
 | `FAELLT_AUS_TF` | Cancelled (true/false) | Cancellation analysis |
 | `ZUSATZFAHRT_TF` | Additional (unscheduled) journey | Possible exclusion |
 | `DURCHFAHRT_TF` | Pass-through without stop | Exclusion |
@@ -52,16 +53,19 @@ confirmed during the profiling step before the midterm.
 ### Data-quality risks
 
 - **Missing journeys:** journeys without real-time data are not included at all, so they cannot be detected as missing values in the file.
-- **Forecast instead of actual:** some times are the last forecast, not a measured actual time. The prognosis status is used to measure and filter this. First exploration: at Luzern almost all actual times are `REAL`.
+- **Forecast instead of actual:** some times are the last forecast, not a measured actual time. On 8 October: `REAL` about 88 %, `UNBEKANNT` about 11 % (the cancelled trains), `PROGNOSE` 40 rows. Rows are flagged, not dropped, so every exclusion stays countable.
 - **Precision:** scheduled times are given to the minute, actual times (`AN_PROGNOSE`, `AB_PROGNOSE`) to the second.
-- **Arrival or departure only:** a row has no scheduled arrival if the journey starts at that stop, and no scheduled departure if it ends there. Luzern is a terminal station, so every row there has only one of the two. This is not missing data; it defines the stop role (origin, terminus, intermediate).
+- **Arrival or departure only:** a row has no scheduled arrival if the journey starts at that stop, and no scheduled departure if it ends there. Luzern is a terminal station, so most rows there have only one of the two (113 of 842 have both, for trains that reverse and continue). This is not missing data; it defines the stop role (origin, terminus, intermediate).
+- **Planned closures:** cancellations carry no cause. On 8 October, 496 of 558 cancellations at our stops were the whole S9 line for the day, most likely a planned closure. A rule for line-wide closures is still to be agreed.
+- **Product codes:** `PRODUKT_ID` is not written consistently (`Bus` and `BUS` in the same file), so the rail filter compares case-insensitively.
+- **Source links:** the download links are read from the dataset page; a redesign of the page would break the lookup, and the scripts then fail with a clear message.
 - **Schema change:** v1 was discontinued at the end of June 2026; this project uses v2 only (from July 2025) to avoid handling two schemas.
-- **Stop identifiers:** `BPUIC` is identical to the service points `number` (e.g. 8505000 = Luzern) and is used as the join key; `SLOID` is not needed.
+- **Stop identifiers:** `BPUIC` is identical to the service points `number` (e.g. 8505000 = Luzern) and is used as the join key. v2 lets some operators deliver the SLOID in the `BPUIC` field; on both checked days the `BPUIC` filter missed no rail row at our stops, so `SLOID` is not needed.
 - **Time zone:** times are local Swiss time; alignment with weather timestamps must handle daylight-saving changes.
 
-### Completeness check (planned)
+### Completeness check (planned for the final)
 
-Before the midterm, a profiling script computes, for Lucerne rail data per operator, the
+A profiling script computes, for Lucerne rail data per operator, the
 share of stop events that have a scheduled time but no `REAL` actual time (separately for
 arrivals and departures, so that origin/terminus rows are not counted as missing). If an
 operator falls below a documented threshold (e.g. 95 % complete), it is excluded and the
@@ -74,7 +78,7 @@ decision is documented.
 | Provider | opentransportdata.swiss (master data from the national service-point register, atlas) |
 | Dataset | [Service Points v2](https://data.opentransportdata.swiss/dataset/service-point-v2) – [cookbook](https://opentransportdata.swiss/en/cookbook/masterdata-cookbook/servicepoints/). The previous service-points datasets were discontinued at the end of June 2026. |
 | Content | All public-transport service points in Switzerland (stops, operating points, bus stops) with number, official designation, canton, municipality, means of transport, WGS84 coordinates and height |
-| Access | CSV download |
+| Access | CSV download. The file gets a new resource ID when it is republished, so the link is read from the [dataset page](https://data.opentransportdata.swiss/dataset/service-point-v2) on every run (a stored URL from 11 October returned 404 on 15 October) |
 | File used | `actual-date-swiss-service-point.csv`: only the currently valid version of each service point (one row per stop). The "all versions" file contains one row per historical version (`validFrom`/`validTo`) and is not used. |
 | Use | Select the rail stops in the canton of Lucerne; assign each stop to the nearest weather station; join to Ist-Daten via `BPUIC` = `number` |
 | Update frequency | Daily; treated as a slowly changing reference table (full reload) |
@@ -119,7 +123,7 @@ version is not needed.
 | `ogd-smn_meta_parameters.csv` | Parameter codes with description, granularity and unit | Choosing the parameters |
 | `ogd-smn_meta_datainventory.csv` | Which station measures which parameter, and since when | Checking that each chosen station measures all needed parameters **(to verify: a complete download is still needed)** |
 
-The files are semicolon-separated and Latin-1 encoded (except the inventory file).
+The files are semicolon-separated and Windows-1252 encoded, a superset of Latin-1 (except the inventory file).
 
 ### Parameters (hourly)
 
@@ -139,7 +143,7 @@ therefore approximated from rain intensity and gusts.
 
 No source links stops to weather stations, so the pipeline derives the mapping:
 
-1. Compute the distance from each of the 51 stops (service points `wgs84North`/`wgs84East`) to every station in `ogd-smn_meta_stations.csv` (158 stations, no pre-filter needed).
+1. Compute the distance from each of the 51 stops (service points `wgs84North`/`wgs84East`) to every station in `ogd-smn_meta_stations.csv` (159 stations on 15 October 2026, no pre-filter needed).
 2. Exclude stations whose altitude differs by more than 300 m from the stop (`height` vs. `station_height_masl`). Without this rule, Malters and Schachen would be mapped to Pilatus (2,105 m) and the Wolhusen area to Napf (1,404 m).
 3. Assign the nearest remaining station and store it with the distance and altitude difference.
 

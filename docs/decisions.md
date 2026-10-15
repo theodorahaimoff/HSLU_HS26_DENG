@@ -69,7 +69,9 @@ A rerun therefore never creates duplicates, and corrected source data replaces t
 The daily flow is `check_transport_source → ingest_transport → ingest_weather → validate_day`.
 The check finds the day's file link on the dataset page before anything is downloaded. The server
 refuses `HEAD` requests (403), so unlike the course's `check_source.py` the check uses a streamed
-`GET` that reads only the headers.
+`GET` that reads only the headers. The service points file is found the same way: its download URL
+changes when the file is republished (the URL from 11 October returned 404 on 15 October), so no
+script stores a fixed download URL.
 Validation fails the execution, it never only warns: the day has rows, every stop has a weather
 station, and every flag and status column only holds expected values.
 

@@ -65,85 +65,84 @@ real data in [notebooks/01_explore_sources.ipynb](notebooks/01_explore_sources.i
 | Source | Content | Access | Update |
 |---|---|---|---|
 | [opentransportdata.swiss – Ist-Daten v2](https://data.opentransportdata.swiss/dataset/ist-daten-v2) | Scheduled vs. actual arrival/departure times, cancellations, per stop event | Daily CSV, link read from the dataset page (rolling window of the last 50 days); monthly v2 ZIPs in the [archive](https://archive.opentransportdata.swiss/actual_data_archive.htm) for older days | Daily: the previous operating day is available by about 05:15 Swiss time |
-| [opentransportdata.swiss – Service Points v2](https://data.opentransportdata.swiss/dataset/service-point-v2) | Stop master data incl. canton and WGS84 coordinates, used for the stop list and weather-station mapping ([cookbook](https://opentransportdata.swiss/en/cookbook/masterdata-cookbook/servicepoints/)) | CSV download (current-state file), full snapshot | Daily |
+| [opentransportdata.swiss – Service Points v2](https://data.opentransportdata.swiss/dataset/service-point-v2) | Stop master data incl. canton and WGS84 coordinates, used for the stop list and weather-station mapping ([cookbook](https://opentransportdata.swiss/en/cookbook/masterdata-cookbook/servicepoints/)) | CSV (current-state file), link read from the dataset page on every run, full snapshot | Daily |
 | [MeteoSwiss Open Data – SwissMetNet](https://opendatadocs.meteoswiss.ch/a-data-groundbased/a1-automatic-weather-stations) | Hourly precipitation, temperature, wind gusts per station (5 stations), plus station metadata | STAC API (`data.geo.admin.ch`), CSV per station | Historical (yearly), recent (1 January to yesterday, updated daily), now |
 
 Details (schema, volume, quality risks): [docs/data_sources.md](docs/data_sources.md)
 
-## 4. Architecture (v0.1)
+## 4. Architecture (v0.2)
 
 ```mermaid
-%%{init: {"block": {"padding": 10}}}%%
+%%{init: {"block": {"padding": 30}}}%%
 block-beta
   columns 4
   block:EXT:1
     columns 1
     T1["External sources"]
-    S1["<b>Ist-Daten v2</b><br/>opentransportdata.swiss"]
+    S1["<b>Ist-Daten v2</b><br/>daily files + monthly archive"]
     space
-    S2["<b>Service Points v2</b><br/>opentransportdata.swiss"]
+    S2["<b>Service Points v2</b><br/>current stop list"]
     space
-    S3["<b>MeteoSwiss</b><br/>STAC API, hourly data"]
+    S3["<b>MeteoSwiss</b><br/>SwissMetNet, hourly"]
   end
   block:DC:1
     columns 1
     T2["Local · Docker Compose"]
-    O["<b>Orchestrator</b><br/>schedule, retries, backfills"]
+    K["<b>Kestra</b><br/>schedule, retries, backfills"]
     space
-    I["<b>Ingestion jobs</b><br/>Python"]
+    I["<b>Task containers</b><br/>Python ingestion scripts"]
     space
-    P[("<b>PostgreSQL</b><br/>midterm")]
+    KDB[("<b>kestra-db</b><br/>execution history")]
+  end
+  block:PG:1
+    columns 1
+    T3["Local · PostgreSQL"]
+    R[("<b>raw</b><br/>stops, stop events, weather")]
+    space
+    ST[("<b>staging</b><br/>typed, flagged, delays")]
+    space
+    A["<b>pgAdmin</b><br/>verification queries"]
   end
   block:GCP:1
     columns 1
-    T3["Google Cloud"]
+    T4["Google Cloud (final)"]
     TF["<b>Terraform</b><br/>provisions bucket + dataset"]
     space
-    G[("<b>GCS bucket</b><br/>raw data lake")]
+    G[("<b>GCS bucket</b><br/>raw files")]
     space
-    B[("<b>BigQuery</b><br/>staging + curated tables")]
-  end
-  block:SV:1
-    columns 1
-    T4["Serving"]
-    space
-    space
-    M["<b>MeteoSwiss</b><br/>latest measurement"]
-    space
-    D["<b>Streamlit dashboard</b><br/>for commuters + analysts"]
+    B[("<b>BigQuery</b><br/>staging + curated, dashboard")]
   end
 
   S1 --> I
   S2 --> I
   S3 --> I
-  O -- "⚙ triggers" --> I
-  I -- "load" --> P
-  I -- "raw files" --> G
+  K -- "⚙ starts" --> I
+  I -- "load" --> R
+  R -- "view" --> ST
+  ST --> A
   TF -- "⚙ provisions" --> G
-  G -- "SQL transformations" --> B
-  B --> D
-  M -- "⚡ at request time" --> D
+  G --> B
 
   classDef title fill:none,stroke:none,font-weight:bold
   classDef box fill:#ffffff,stroke:#444,color:#111
+  classDef later fill:#ffffff,stroke:#999,color:#666,stroke-dasharray:4 3
   class T1,T2,T3,T4 title
-  class S1,S2,S3,O,I,P,TF,G,B,M,D box
+  class S1,S2,S3,K,I,KDB,R,ST,A box
+  class TF,G,B later
   style EXT fill:#f4f4f4,stroke:#8a8a8a
   style DC fill:#eaf2fb,stroke:#2f6db3
+  style PG fill:#fdf4e6,stroke:#b37a2f
   style GCP fill:#eaf6ee,stroke:#2e8b57
-  style SV fill:#f3ecfa,stroke:#8a5bb5
 ```
 
-**Legend:** unmarked arrows = data flow (batch) · ⚙ = control (the orchestrator starts jobs, Terraform provisions resources) · ⚡ = live call at request time
+**Legend:** unmarked arrows = data flow (batch) · ⚙ = control (Kestra starts tasks, Terraform provisions resources) · dashed boxes = final version, unchanged since v0.1. In the final version the ingestion tasks also write the raw files to the GCS bucket, and the Streamlit dashboard reads the curated BigQuery tables; Kestra keeps its execution history in its own database (kestra-db), separate from the pipeline data.
 
-Full description, ingestion strategy and division of responsibilities:
-[docs/architecture/architecture_v0.1.md](docs/architecture/architecture_v0.1.md)
-
-**Since v0.1:** the orchestrator is **Kestra**, set up like the course's Week 5 lab (Kestra with
-its own metadata database, our scripts run in temporary containers from our own image). The daily
-flow is `check_transport_source → ingest_transport → ingest_weather → validate_day`. Architecture
-v0.2 follows with the midterm submission; the changes and their reasons are in
-[docs/decisions.md](docs/decisions.md).
+Kestra runs the daily flow `check_transport_source → ingest_transport → ingest_weather →
+validate_day → transform` for the previous operating day, and the setup flow `rail_weather_stops`
+once for the stop list. Full description, storage zones and what changed since the pitch:
+[docs/architecture/architecture_v0.2.md](docs/architecture/architecture_v0.2.md). The pitch version
+stays in [docs/architecture/architecture_v0.1.md](docs/architecture/architecture_v0.1.md) to show how
+the design evolved.
 
 ## 5. Design decisions
 
@@ -171,15 +170,16 @@ with the decision it supports.
 │   ├── decisions.md                # design decisions with reasons and sources
 │   ├── project_plan.md             # milestones and backlog
 │   └── architecture/
-│       └── architecture_v0.1.md    # initial architecture and responsibilities
+│       ├── architecture_v0.1.md    # pitch architecture (kept to show the evolution)
+│       └── architecture_v0.2.md    # midterm architecture, flow, zones, changes since v0.1
 ├── notebooks/
 │   └── 01_explore_sources.ipynb    # data exploration: evidence for the decisions
 ├── orchestration/
 │   ├── application.yaml            # Kestra configuration
 │   └── flows/                      # Kestra flows: rail_weather_stops, rail_weather_daily
-├── ingestion/                      # batch ingestion scripts (in progress)
-├── sql/                            # table definitions and verification queries (in progress)
-├── transformations/                # SQL transformations (planned)
+├── ingestion/                      # pipeline steps: stops, check_source, transport, weather, validate, transform
+├── sql/                            # schema.sql (tables), verification.sql (queries for reviewers)
+├── transformations/                # SQL views: staging.stop_events
 ├── terraform/                      # GCP infrastructure (planned, final)
 ├── dashboard/                      # Streamlit dashboard (planned, final)
 └── data/                           # downloaded source files, one folder per source, not committed
@@ -187,8 +187,9 @@ with the decision it supports.
 
 ## 7. Setup and execution
 
-> **Status:** the environment (Docker Compose, Kestra, flows) is in place; the ingestion scripts
-> the flows call are being written. Steps 4–6 work once `ingestion/` is complete.
+> **Status:** everything except the weather ingestion (`ingestion/weather.py`) is in place and
+> tested on real data. Until it exists, the `ingest_weather` task fails, and the tasks after it
+> don't run in Kestra.
 
 **Requirements:** Docker with Docker Compose v2 (Docker Desktop includes both). For the
 notebooks only: Python 3.13.
@@ -245,7 +246,7 @@ Each daily file is about 660 MB to download, so keep test runs to a few days.
 
 Run the queries in `sql/verification.sql` in pgAdmin: rows per operating day, the 51 stops, and the
 quality checks. The `validate_day` task runs the same checks after every load and fails the
-execution if one doesn't pass.
+execution if one doesn't pass. Screenshots of tested runs are in [docs/evidence/](docs/evidence/).
 
 **Stop and reset**
 
