@@ -1,6 +1,6 @@
 # Image that Kestra uses to run our Python ingestion scripts, one temporary container per task.
 #   docker build -t deng-rail-weather:local .
-# Rebuild after every change to ingestion/ or sql/, otherwise Kestra runs the old code.
+# Rebuild after every change to ingestion/, sql/ or transformations/, otherwise Kestra runs the old code.
 FROM python:3.13.11-slim-bookworm
 
 WORKDIR /app
@@ -10,10 +10,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY ingestion ./ingestion
 COPY sql ./sql
+COPY transformations ./transformations
 
 RUN useradd --create-home pipeline
 USER pipeline
 
 ENV PYTHONUNBUFFERED=1
+# Kestra runs each command in its own working folder, not in /app, so Python must be told where
+# the ingestion package is. Without this: "No module named 'ingestion'".
+ENV PYTHONPATH=/app
 ENTRYPOINT ["python"]
 CMD ["-m", "ingestion.transport", "--help"]
