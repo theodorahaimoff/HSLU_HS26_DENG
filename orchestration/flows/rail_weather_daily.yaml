@@ -1,0 +1,121 @@
+# Daily pipeline: load one operating day of rail stop events and hourly weather, then validate it.
+#
+#   check_transport_source → ingest_transport → ingest_weather → validate_day
+#
+# Which day is processed
+#   Scheduled run or backfill: the day BEFORE trigger.date, because Ist-Daten publishes
+#   yesterday's file. The scheduled date is used, never the machine's clock, so a backfill
+#   over past dates processes exactly those days.
+#   Manual run: the operating_day chosen in the execution form.
+#   Every date-dependent task uses the same expression (course pattern, Week 5 Part 5).
+#
+# Transport and weather ingestion don't depend on each other and could run in parallel.
+# They run one after the other here to keep the flow simple to read and debug.
+#
+# Requires the image: docker build -t deng-rail-weather:local .
+# Requires the stop list: run the flow rail_weather_stops once first.
+
+id: rail_weather_daily
+namespace: deng.rail_weather
+
+inputs:
+  - id: operating_day
+    type: DATE
+    defaults: "2026-10-08"
+
+triggers:
+  - id: daily_schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    # Yesterday's Ist-Daten file is published by about 05:15 Swiss time (checked 15 Oct 2026),
+    # so 09:00 leaves a safe margin. check_transport_source retries if the file is late.
+    cron: "0 9 * * *"
+    timezone: Europe/Zurich
+
+tasks:
+  # Fails fast with a clear message if yesterday's file isn't on the dataset page yet.
+  # A late file is a temporary problem, so this task retries.
+  - id: check_transport_source
+    type: io.kestra.plugin.scripts.shell.Commands
+    containerImage: "{{ envs.rw_image }}"
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: NEVER
+      networkMode: "{{ envs.rw_network }}"
+      entryPoint: []
+    retry:
+      type: constant
+      interval: PT30M
+      maxAttempts: 4
+    commands:
+      - >-
+        python -m ingestion.check_source
+        --date {{ trigger.date is defined ? (trigger.date | dateAdd(-1, 'DAYS') | date('yyyy-MM-dd')) : inputs.operating_day }}
+
+  # Download, filter to our 51 stops, replace this day in one transaction, check counts.
+  - id: ingest_transport
+    type: io.kestra.plugin.scripts.shell.Commands
+    containerImage: "{{ envs.rw_image }}"
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: NEVER
+      networkMode: "{{ envs.rw_network }}"
+      entryPoint: []
+    retry:
+      type: constant
+      interval: PT2M
+      maxAttempts: 3
+    env:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "{{ envs.rw_db }}"
+      POSTGRES_USER: "{{ envs.rw_user }}"
+      POSTGRES_PASSWORD: "{{ envs.rw_password }}"
+    commands:
+      - >-
+        python -m ingestion.transport
+        --date {{ trigger.date is defined ? (trigger.date | dateAdd(-1, 'DAYS') | date('yyyy-MM-dd')) : inputs.operating_day }}
+
+  # Hourly values for the 5 mapped SwissMetNet stations, same replace-the-day pattern.
+  - id: ingest_weather
+    type: io.kestra.plugin.scripts.shell.Commands
+    containerImage: "{{ envs.rw_image }}"
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: NEVER
+      networkMode: "{{ envs.rw_network }}"
+      entryPoint: []
+    retry:
+      type: constant
+      interval: PT2M
+      maxAttempts: 3
+    env:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "{{ envs.rw_db }}"
+      POSTGRES_USER: "{{ envs.rw_user }}"
+      POSTGRES_PASSWORD: "{{ envs.rw_password }}"
+    commands:
+      - >-
+        python -m ingestion.weather
+        --date {{ trigger.date is defined ? (trigger.date | dateAdd(-1, 'DAYS') | date('yyyy-MM-dd')) : inputs.operating_day }}
+
+  # A green load is not proof. Fails the execution if the day is missing or has unexpected values.
+  # No retry: repeating a check on the same data gives the same answer.
+  - id: validate_day
+    type: io.kestra.plugin.scripts.shell.Commands
+    containerImage: "{{ envs.rw_image }}"
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: NEVER
+      networkMode: "{{ envs.rw_network }}"
+      entryPoint: []
+    env:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "{{ envs.rw_db }}"
+      POSTGRES_USER: "{{ envs.rw_user }}"
+      POSTGRES_PASSWORD: "{{ envs.rw_password }}"
+    commands:
+      - >-
+        python -m ingestion.validate
+        --date {{ trigger.date is defined ? (trigger.date | dateAdd(-1, 'DAYS') | date('yyyy-MM-dd')) : inputs.operating_day }}

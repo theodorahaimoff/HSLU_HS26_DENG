@@ -1,0 +1,29 @@
+# Setup flow: load the stop list and the stop-to-weather-station mapping.
+# Run once before the first daily run, then only when the service points change.
+# Full snapshot: the script replaces the whole table in one transaction and fails
+# if the filters don't give the expected 51 stops.
+
+id: rail_weather_stops
+namespace: deng.rail_weather
+
+tasks:
+  - id: load_stops
+    type: io.kestra.plugin.scripts.shell.Commands
+    containerImage: "{{ envs.rw_image }}"
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      pullPolicy: NEVER
+      networkMode: "{{ envs.rw_network }}"
+      entryPoint: []
+    retry:
+      type: constant
+      interval: PT2M
+      maxAttempts: 3
+    env:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "{{ envs.rw_db }}"
+      POSTGRES_USER: "{{ envs.rw_user }}"
+      POSTGRES_PASSWORD: "{{ envs.rw_password }}"
+    commands:
+      - python -m ingestion.stops
