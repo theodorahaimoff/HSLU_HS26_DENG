@@ -1,0 +1,8 @@
+# Python dependencies for the ingestion scripts (midterm, local pipeline).
+# Versions are pinned so a fresh clone installs exactly what we tested.
+
+requests==2.34.2          # download Ist-Daten, service points and MeteoSwiss files
+pandas==3.0.6             # read, filter and type the CSV files
+SQLAlchemy==2.1.4         # database connection used by pandas to load into PostgreSQL
+psycopg2-binary==2.9.13   # PostgreSQL driver for SQLAlchemy
+python-dotenv==1.2.4      # load local settings from .env (never committed)

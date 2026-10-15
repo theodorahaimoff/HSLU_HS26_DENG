@@ -1,0 +1,8 @@
+# Only what the pipeline image needs. Keeps .env, data files and notebooks out of the image.
+*
+!requirements.txt
+!ingestion/
+!ingestion/**
+!sql/
+!sql/**
+**/__pycache__

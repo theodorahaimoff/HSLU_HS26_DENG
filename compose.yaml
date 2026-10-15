@@ -1,0 +1,101 @@
+# Local pipeline: our data database, pgAdmin, and Kestra with its own metadata database.
+# Modelled on the course's Week 5 setup (weeks/05-workflow-orchestration/compose.yaml).
+#
+#   cp .env.example .env              # then replace the example passwords
+#   docker build -t deng-rail-weather:local .
+#   docker compose config --quiet
+#   docker compose up -d
+#
+# Kestra:  http://localhost:8080   (KESTRA_USER / KESTRA_PASSWORD)
+# pgAdmin: http://localhost:8086   (register server: host "postgres", port 5432)
+
+name: deng-rail-weather
+
+services:
+  # Our data: stop list, stop events and hourly weather.
+  postgres:
+    image: postgres:18.6-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    # Published on localhost only, so scripts and notebooks on your own machine
+    # can still connect while developing. Containers use host "postgres".
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - rail_weather_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  pgadmin:
+    image: dpage/pgadmin4:9.17
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:?Set PGADMIN_DEFAULT_EMAIL in .env}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?Set PGADMIN_DEFAULT_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT:-8086}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Kestra's own execution history and flow definitions. Never our pipeline data.
+  kestra-db:
+    image: postgres:18.6-bookworm
+    environment:
+      POSTGRES_DB: kestra
+      POSTGRES_USER: kestra
+      POSTGRES_PASSWORD: ${KESTRA_DB_PASSWORD:?Set KESTRA_DB_PASSWORD in .env}
+    volumes:
+      - kestra_db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kestra -d kestra"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  kestra:
+    image: kestra/kestra:v1.1
+    user: root
+    command: server standalone --config /etc/kestra/application.yaml
+    ports:
+      - "127.0.0.1:${KESTRA_PORT:-8080}:8080"
+    environment:
+      DATASOURCES_POSTGRES_URL: jdbc:postgresql://kestra-db:5432/kestra
+      DATASOURCES_POSTGRES_DRIVERCLASSNAME: org.postgresql.Driver
+      DATASOURCES_POSTGRES_USERNAME: kestra
+      DATASOURCES_POSTGRES_PASSWORD: ${KESTRA_DB_PASSWORD:?Set KESTRA_DB_PASSWORD in .env}
+      KESTRA_LOGIN_USER: ${KESTRA_USER:?Set KESTRA_USER in .env}
+      KESTRA_LOGIN_PASSWORD: ${KESTRA_PASSWORD:?Set KESTRA_PASSWORD in .env}
+      # Variables starting with ENV_ are readable in flows as {{ envs.<name in lower case> }}.
+      ENV_RW_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      ENV_RW_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      ENV_RW_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      ENV_RW_NETWORK: deng-rail-weather
+      ENV_RW_IMAGE: deng-rail-weather:local
+    volumes:
+      - kestra_files:/app/storage
+      - ./orchestration/application.yaml:/etc/kestra/application.yaml:ro
+      # Lets Kestra start a temporary Python container per task, as in the course lab.
+      # Trusted local setup only: anyone who can edit flows controls your Docker engine.
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      kestra-db:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+volumes:
+  rail_weather_data:
+  pgadmin_data:
+  kestra_db:
+  kestra_files:
+
+networks:
+  default:
+    name: deng-rail-weather
