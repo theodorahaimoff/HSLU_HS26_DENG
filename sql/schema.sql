@@ -52,3 +52,23 @@ CREATE TABLE IF NOT EXISTS raw.stop_events (
     ingested_at          timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (operating_day, fahrt_bezeichner, bpuic)
 );
+
+-- SwissMetNet hourly values: one row per weather station and hour, for the stations in raw.stops.
+-- Only the 7 parameters we need. Column names are the MeteoSwiss codes. A parameter a station
+-- doesn't measure stays NULL (tre005hn only at LUZ, htoauths not at EGO and MOA).
+-- Loaded one day at a time by ingestion/weather.py, which replaces the day.
+CREATE TABLE IF NOT EXISTS raw.weather_hourly (
+    station          text NOT NULL,                   -- SwissMetNet abbreviation, e.g. LUZ
+    observed_at      timestamptz NOT NULL,            -- as in the file: UTC, end of the hour
+    operating_day    date NOT NULL,                   -- Swiss calendar day the hour belongs to
+    rre150h0         double precision,                -- precipitation, hourly total (mm)
+    tre200h0         double precision,                -- air temperature 2 m, mean (°C)
+    tre200hn         double precision,                -- air temperature 2 m, minimum (°C)
+    tre200hx         double precision,                -- air temperature 2 m, maximum (°C)
+    tre005hn         double precision,                -- temperature 5 cm above grass, minimum (°C)
+    fu3010h1         double precision,                -- gust peak, hourly maximum (km/h)
+    htoauths         double precision,                -- snow depth, automatic (cm)
+    source_file      text NOT NULL,                   -- lineage: which file the row came from
+    ingested_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (station, observed_at)
+);
