@@ -39,7 +39,7 @@ A = Emre Sen, B = Theodora Haimoff. Completed items are checked off in this file
 - [x] First justified transformation: staging view with stop role, time basis and arrival/departure delay from `REAL` times, every row kept (B). Weather join by scheduled hour in a second staging view (A + B)
 - [x] `.env.example`, `.gitignore`, setup/run/verify instructions in README (A + B)
 - [x] Architecture v0.2 with changed decisions (B; weather details by A)
-- [ ] Test reproducibility from a fresh clone before submission (A)
+- [x] Test reproducibility from a fresh clone before submission (A)
 
 ### Final – Cloud pipeline (Weeks 8–13)
 
