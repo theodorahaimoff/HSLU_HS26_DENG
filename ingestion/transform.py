@@ -4,7 +4,7 @@
 
 Each file uses CREATE OR REPLACE, so running this again is safe. All files run in one transaction:
 if one fails, none of the views change. Afterwards the script checks that staging has exactly as
-many rows as raw (rows are flagged, never removed, D7).
+many rows as raw, and that the weather join keeps the same rows (rows are flagged, never removed, D7).
 """
 from sqlalchemy import text
 
@@ -29,7 +29,15 @@ def main() -> None:
             staged = connection.scalar(text("SELECT COUNT(*) FROM staging.stop_events"))
             if staged != raw:
                 raise ValueError(f"staging.stop_events has {staged} rows but raw has {raw}; rolling back.")
+            joined = connection.scalar(text("SELECT COUNT(*) FROM staging.stop_events_weather"))
+            if joined != raw:
+                raise ValueError(f"staging.stop_events_weather has {joined} rows but raw has {raw}; rolling back.")
+            no_weather = connection.scalar(text(
+                "SELECT COUNT(*) FROM staging.stop_events_weather WHERE weather_hour_end_utc IS NOT NULL "
+                "AND precipitation_mm IS NULL AND temperature_c IS NULL"))
         print(f"staging.stop_events: {staged:,} rows, the same as raw.stop_events")
+        print(f"staging.stop_events_weather: {joined:,} rows, {no_weather:,} without weather "
+              "(hour not loaded yet, e.g. trains after midnight)")
     finally:
         engine.dispose()
 

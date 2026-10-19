@@ -21,8 +21,12 @@ namespace: deng.rail_weather
 
 inputs:
   - id: operating_day
-    type: DATE
+    type: STRING
     defaults: "2026-10-08"
+    validator: "^\\d{4}-\\d{2}-\\d{2}$"
+    description: >-
+      Day to load (YYYY-MM-DD), used by manual runs only. Scheduled runs and backfills
+      load the day before their scheduled date.
 
 triggers:
   - id: daily_schedule
