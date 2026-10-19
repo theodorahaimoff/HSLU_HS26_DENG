@@ -60,6 +60,7 @@ volume and data-quality risks for each source. The figures were checked against 
 | **Planned closures:** cancellations carry no cause; on 8 October, 496 of 558 cancellations at our stops were the whole S9 line | Rule for line-wide closures being defined; those rows are kept but left out of the weather comparison |
 | **Missing journeys:** journeys without real-time data are not in the file at all | Can't be detected as missing values; documented as a limitation. The completeness check below measures it per operator |
 | **Precision:** scheduled times to the minute, actual times to the second | Delays are computed in minutes with two decimals |
+| **Exact duplicate rows:** the file for 9 October has 32 rows twice, identical in every column (8 S4 journeys) | One copy is kept and the number removed is logged; rows with the same journey and stop but different values still stop the load (D16) |
 | **Inconsistent product codes:** `Bus` and `BUS` in the same file | The rail filter compares case-insensitively |
 | **Stop identifiers:** v2 lets some operators deliver the SLOID in the `BPUIC` field | Checked on two days: the `BPUIC` filter missed no rail row at our stops, so `BPUIC` = service points `number` is the join key |
 | **Schema change:** v1 was discontinued at the end of June 2026 | We use v2 only (from July 2025), one schema |
@@ -176,4 +177,4 @@ Wolhusen and Werthenstein (13–14 km, up to 190 m altitude difference).
 | **Representativeness:** five stations can't capture local conditions at every stop (valleys vs. lake area) | Distance and altitude difference are stored per stop, so weak matches can be identified (D4) |
 | **Missing hours or values** | Ingestion fails if a station doesn't have every hour of the day; validation checks the core parameters and plausible ranges |
 | **Revisions:** recent values may be corrected later | Each run replaces the whole day, so corrected values replace old ones (D14) |
-| **Time zone:** timestamps are UTC and mark the **end** of the hour (verified in the files) | Ingestion assigns each hour to the Swiss calendar day it starts in; the staging join converts the train time to the matching hour (D15) |
+| **Time zone:** timestamps are UTC and mark the **end** of the hour. Verified: global radiation peaks at the 12:00 stamp, and 29 March 2026, the day the clocks changed, has 24 rows | Ingestion assigns each hour to the Swiss calendar day it starts in; the staging join converts the train time to the matching hour (D15) |

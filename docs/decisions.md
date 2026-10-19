@@ -3,6 +3,17 @@
 Design decisions for the pipeline, with the reason and where the idea comes from.
 Newest first within each section. Status is **Decided** unless marked otherwise.
 
+## Source data (19 Oct 2026, after loading 9 October)
+
+### D16 · Keep one copy of exact duplicate rows, stop on conflicting ones
+The Ist-Daten file for 9 October contains 32 rows twice, identical in every column (8 journeys of
+the S4 at Luzern, Horw, Luzern Allmend/Messe and Kriens Mattenhof). The check for one row per journey
+and stop (D10) correctly stopped the load, but it would have failed the same way on every retry and in
+every backfill over that day. An exact copy carries no information, so `transport.py` now keeps one
+copy and logs how many it removed (`removed 32 exact duplicate rows`, 5,477 rows loaded). Rows with
+the same journey and stop but different values still stop the load, because there is no way to tell
+which one is right. 10 October had no duplicates. Found by Emre while testing.
+
 ## Weather (19 Oct 2026, after the first full runs)
 
 ### D15 · Join weather by the scheduled time of the stop event
@@ -31,6 +42,12 @@ corrections. A parameter a station doesn't measure stays NULL (`tre005hn` only a
 not at EGO and MOA); validation requires only the five parameters every station measures.
 The "historical" files for earlier years are not read yet, so a backfill only works within the
 current year.
+
+The timestamps are UTC and mark the end of the hour. Evidence from the files: global radiation peaks
+at the 12:00 stamp, and 29 March 2026, the day the clocks changed, still has 24 rows, which a file in
+Swiss local time couldn't have. A Swiss calendar day therefore has 24 hours, or 23 and 25 when the
+clocks change. Emre tested the script on 16 days, including the 23-hour day, and with deliberately
+broken data to confirm that the checks fail.
 
 ## History (15 Oct 2026, after checking the archive)
 
@@ -94,8 +111,13 @@ A rerun therefore never creates duplicates, and corrected source data replaces t
 |---|---|
 | Yesterday's file not published yet | Yes, `check_transport_source`: every 30 min, 4 attempts |
 | Network or database connection error | Yes, ingestion tasks: every 2 min, 3 attempts |
-| Missing or renamed column, wrong credentials, a bug | No. The script fails with a clear message |
-| Validation failure | No. Checking the same data again gives the same answer |
+| Missing or renamed column, wrong credentials, a bug | Not on purpose. The script fails with a clear message, but see below |
+| Validation failure | No. `validate_day` has no retry: checking the same data again gives the same answer |
+
+The retry is set on the Kestra task, and Kestra can't tell a temporary failure from a permanent one.
+So a permanent error in an ingestion task also runs all three attempts, fails the same way each time
+(on 9 October: three downloads of 681 MB), and then fails the run. No data changes, because every
+attempt rolls back (D10). The scripts themselves never retry.
 
 ### D8 · Check the source first, validate after loading
 The daily flow is `check_transport_source → ingest_transport → ingest_weather → validate_day → transform`.
@@ -160,3 +182,6 @@ if data is a day old. Streaming would add cost and complexity without benefit.
 - Comparing like with like: in the first eight days, weekends had far fewer late departures than
   weekdays, a bigger difference than between wet and dry days. Proposal: compare weather conditions
   within the same day type and hour of day, not across all trains.
+- Frost and ice without ground temperature: `tre005hn` (5 cm above grass) is only measured at LUZ.
+  Proposal (Emre): use the ground temperature where it exists and the air temperature (`tre200hn`)
+  at the other four stations, and document that frost is less precise there.

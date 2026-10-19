@@ -187,8 +187,9 @@ with the decision it supports.
 
 ## 7. Setup and execution
 
-> **Status (midterm):** the local pipeline runs end to end in Kestra and was tested on eight
-> operating days (8 and 11–18 October 2026), including a rerun of a loaded day and a backfill.
+> **Status (midterm):** the local pipeline runs end to end in Kestra and was tested on eleven
+> consecutive operating days (8–18 October 2026), including a rerun of a loaded day, a backfill and
+> a source file with duplicate rows.
 > The cloud part follows in the final version.
 
 **Requirements:** Docker with Docker Compose v2 (Docker Desktop includes both). For the

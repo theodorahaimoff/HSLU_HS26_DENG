@@ -82,7 +82,7 @@ processes exactly those days. A manual run takes the day from the execution form
 | Task | Script | What it does | On failure |
 |---|---|---|---|
 | `check_transport_source` | `ingestion/check_source.py` | Finds the day's file on the dataset page and checks it can be downloaded | Retries every 30 min, 4 attempts (the file may be late) |
-| `ingest_transport` | `ingestion/transport.py` | Downloads the day (about 660 MB) to a temporary folder, keeps the rail rows at our 51 stops (about 5,500), replaces that day in `raw.stop_events` | Retries every 2 min, 3 attempts; rolls back, the previous version stays |
+| `ingest_transport` | `ingestion/transport.py` | Downloads the day (about 660 MB) to a temporary folder, keeps the rail rows at our 51 stops (about 5,100–5,500), keeps one copy of exact duplicate rows (D16), replaces that day in `raw.stop_events` | Retries every 2 min, 3 attempts; rolls back, the previous version stays |
 | `ingest_weather` | `ingestion/weather.py` | Finds each station's hourly "recent" file through the STAC API, keeps the 7 parameters for the hours of that Swiss calendar day (24, or 23/25 when the clocks change), replaces that day in `raw.weather_hourly` (120 rows) | Same as transport |
 | `validate_day` | `ingestion/validate.py` | Checks the loaded day: rows exist, every stop is known, only known status and flag values; every weather station has all hours, the core parameters and plausible values | No retry: the execution fails |
 | `transform` | `ingestion/transform.py` | Creates or updates both staging views and checks they keep every row | No retry |

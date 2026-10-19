@@ -32,15 +32,22 @@ def our_stop_numbers(engine) -> set[str]:
 
 
 def prepare_rows(rows: pd.DataFrame, day: date, source_file: str) -> pd.DataFrame:
-    """Check the rows belong to the requested day, then add the load columns."""
+    """Check the rows belong to the requested day, remove exact duplicates, then add the load columns."""
     if rows.empty:
         raise ValueError(f"The file has no rail rows at our stops for {day}: wrong file or changed filter values.")
     days_in_file = set(rows["BETRIEBSTAG"].unique())
     if days_in_file != {day.strftime("%d.%m.%Y")}:
         raise ValueError(f"Expected operating day {day:%d.%m.%Y} only, the file contains {sorted(days_in_file)}.")
-    duplicates = rows.duplicated(["FAHRT_BEZEICHNER", "BPUIC"]).sum()
-    if duplicates:
-        raise ValueError(f"{duplicates} rows share a journey and stop: the table key (D10) would be violated.")
+    # Exact copies of a row carry no information, so one copy is kept (D16; 32 pairs on 9 Oct 2026).
+    exact = int(rows.duplicated().sum())
+    if exact:
+        print(f"{day}: removed {exact} exact duplicate rows from the source file")
+        rows = rows.drop_duplicates()
+    # Same journey and stop with different values: we can't tell which is right, so stop.
+    conflicts = int(rows.duplicated(["FAHRT_BEZEICHNER", "BPUIC"]).sum())
+    if conflicts:
+        raise ValueError(f"{conflicts} rows share a journey and stop but differ: the table key (D10) "
+                         "would be violated and the right row can't be chosen.")
 
     prepared = rows.rename(columns=str.lower)
     prepared.insert(0, "operating_day", day)
