@@ -3,7 +3,8 @@
 This document describes provenance, access method, format, schema, update frequency,
 volume and data-quality risks for each source. The figures were checked against real files in
 [notebooks/01_explore_sources.ipynb](../notebooks/01_explore_sources.ipynb) (operating days
-8 October and 29 September 2026). Items marked **(to verify)** are still open.
+8 October and 29 September 2026); the weather figures against the loaded hourly files
+(8 and 11–18 October 2026).
 
 ---
 
