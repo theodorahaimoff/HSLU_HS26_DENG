@@ -50,18 +50,20 @@ volume and data-quality risks for each source. The figures were checked against 
 | `ZUSATZFAHRT_TF` | Additional (unscheduled) journey | Possible exclusion |
 | `DURCHFAHRT_TF` | Pass-through without stop | Exclusion |
 
-### Data-quality risks
+### Data quality and how we handle it
 
-- **Missing journeys:** journeys without real-time data are not included at all, so they cannot be detected as missing values in the file.
-- **Forecast instead of actual:** some times are the last forecast, not a measured actual time. On 8 October: `REAL` about 88 %, `UNBEKANNT` about 11 % (the cancelled trains), `PROGNOSE` 40 rows. Rows are flagged, not dropped, so every exclusion stays countable.
-- **Precision:** scheduled times are given to the minute, actual times (`AN_PROGNOSE`, `AB_PROGNOSE`) to the second.
-- **Arrival or departure only:** a row has no scheduled arrival if the journey starts at that stop, and no scheduled departure if it ends there. Luzern is a terminal station, so most rows there have only one of the two (113 of 842 have both, for trains that reverse and continue). This is not missing data; it defines the stop role (origin, terminus, intermediate).
-- **Planned closures:** cancellations carry no cause. On 8 October, 496 of 558 cancellations at our stops were the whole S9 line for the day, most likely a planned closure. A rule for line-wide closures is still to be agreed.
-- **Product codes:** `PRODUKT_ID` is not written consistently (`Bus` and `BUS` in the same file), so the rail filter compares case-insensitively.
-- **Source links:** the download links are read from the dataset page; a redesign of the page would break the lookup, and the scripts then fail with a clear message.
-- **Schema change:** v1 was discontinued at the end of June 2026; this project uses v2 only (from July 2025) to avoid handling two schemas.
-- **Stop identifiers:** `BPUIC` is identical to the service points `number` (e.g. 8505000 = Luzern) and is used as the join key. v2 lets some operators deliver the SLOID in the `BPUIC` field; on both checked days the `BPUIC` filter missed no rail row at our stops, so `SLOID` is not needed.
-- **Time zone:** times are local Swiss time; alignment with weather timestamps must handle daylight-saving changes.
+| What we found | How the pipeline handles it |
+|---|---|
+| **Forecasts instead of measurements:** on 8 October, `REAL` (measured) about 88 %, `UNBEKANNT` about 11 % (exactly the cancelled trains), `PROGNOSE` 40 rows | Every row gets a status; delays are computed only from `REAL` times, the other rows are kept with a NULL delay, so every exclusion stays countable (D7) |
+| **Arrival or departure only:** a journey that starts at a stop has no arrival time there, one that ends has no departure. Luzern is a terminal station (113 of 842 rows have both, for trains that reverse) | Not missing data: it defines the stop role (origin, terminus, intermediate), and arrivals and departures are analysed separately (D2) |
+| **Planned closures:** cancellations carry no cause; on 8 October, 496 of 558 cancellations at our stops were the whole S9 line | Rule for line-wide closures being defined; those rows are kept but left out of the weather comparison |
+| **Missing journeys:** journeys without real-time data are not in the file at all | Can't be detected as missing values; documented as a limitation. The completeness check below measures it per operator |
+| **Precision:** scheduled times to the minute, actual times to the second | Delays are computed in minutes with two decimals |
+| **Inconsistent product codes:** `Bus` and `BUS` in the same file | The rail filter compares case-insensitively |
+| **Stop identifiers:** v2 lets some operators deliver the SLOID in the `BPUIC` field | Checked on two days: the `BPUIC` filter missed no rail row at our stops, so `BPUIC` = service points `number` is the join key |
+| **Schema change:** v1 was discontinued at the end of June 2026 | We use v2 only (from July 2025), one schema |
+| **Changing download links:** each file has its own resource ID | Links are read from the dataset page on every run; the source check fails with a clear message if the page changes (D8) |
+| **Time zone:** times are Swiss local time | Converted to the UTC hour labels of the weather data in the staging join (D15) |
 
 ### Completeness check (planned for the final)
 
@@ -110,9 +112,9 @@ version is not needed.
 | Access | STAC API of the Federal Spatial Data Infrastructure: `https://data.geo.admin.ch/api/stac/v1/collections/ch.meteoschweiz.ogd-smn` (and `ch.meteoschweiz.ogd-smn-precip` for precipitation-only stations) |
 | Format | CSV, one file per station and granularity |
 | Granularity used | Hourly (official MeteoSwiss aggregates, not self-computed) |
-| Update frequency | Files split into *historical* (from station start until end of last year, updated yearly), *recent* (1 January of the current year until yesterday, updated daily) and *now* (frequent update) |
+| Update frequency | Files split into *historical* (from station start until end of last year, updated yearly), *recent* (1 January of the current year until yesterday, updated daily, at about 04:40 Swiss time on 19 October 2026) and *now* (frequent update). We use the *recent* files |
 | Stations | 5 stations, chosen by the stop-to-station mapping below: Luzern (LUZ), Egolzwil (EGO), Mosen (MOA), Schüpfheim (SPF), Cham (CHZ, canton Zug) |
-| Volume | Small: a few stations × hourly values |
+| Volume | 120 rows per day for our 5 stations (24 hours each); one "recent" file per station covers 1 January to yesterday |
 | Licence | Free use; **source must be cited ("Source: MeteoSwiss")** |
 
 ### Metadata files
@@ -121,7 +123,7 @@ version is not needed.
 |---|---|---|
 | `ogd-smn_meta_stations.csv` | All stations with abbreviation, name, canton, altitude and WGS84 coordinates | Stop-to-station mapping |
 | `ogd-smn_meta_parameters.csv` | Parameter codes with description, granularity and unit | Choosing the parameters |
-| `ogd-smn_meta_datainventory.csv` | Which station measures which parameter, and since when | Checking that each chosen station measures all needed parameters **(to verify: a complete download is still needed)** |
+| `ogd-smn_meta_datainventory.csv` | Which station measures which parameter, and since when | Which station measures which parameter (see the coverage below) |
 
 The files are semicolon-separated and Windows-1252 encoded, a superset of Latin-1 (except the inventory file).
 
@@ -135,6 +137,10 @@ The files are semicolon-separated and Windows-1252 encoded, a superset of Latin-
 | `tre005hn` | Air temperature 5 cm above grass, hourly minimum | °C | Ground frost, icy conditions |
 | `fu3010h1` | Gust peak (1 s), hourly maximum | km/h | Wind, thunderstorm proxy |
 | `htoauths` | Snow depth, automatic measurement | cm | Supporting only: not quality-checked by MeteoSwiss |
+
+Coverage in the loaded hourly files (8 and 11–18 October 2026): all 5 stations measure `rre150h0`,
+`tre200h0`, `tre200hn`, `tre200hx` and `fu3010h1`. `tre005hn` is only measured at LUZ, and `htoauths`
+not at EGO and MOA; these stay NULL there.
 
 Not available in the station data: warning levels, hail and lightning. Thunderstorms are
 therefore approximated from rain intensity and gusts.
@@ -161,10 +167,12 @@ The canton is deliberately not used: Cham is outside the canton but closer to tw
 any Lucerne station. All stops are within 14 km of their station; the weakest matches are
 Wolhusen and Werthenstein (13–14 km, up to 190 m altitude difference).
 
-### Data-quality risks
+### Data quality and how we handle it
 
-- **Snow:** automatic snow-depth data is not manually checked and is not an official series; snow is therefore derived from precipitation and temperature.
-- **Representativeness:** five stations cannot capture local conditions at every stop (e.g. valleys vs. lake area); distance and altitude difference are stored per stop so weak matches can be identified.
-- **Missing values / outages:** individual hours may be missing and must be handled explicitly.
-- **Revisions:** recent data may be corrected later; ingestion must be rerunnable so that corrected values replace old ones.
-- **Time zone:** MeteoSwiss timestamps are expected to be UTC **(to verify)**; conversion to Swiss local time is required for joining.
+| What we found | How the pipeline handles it |
+|---|---|
+| **Snow:** automatic snow depth is not quality-checked by MeteoSwiss and is not an official series | Loaded for reference only; snow is derived from precipitation and temperature |
+| **Representativeness:** five stations can't capture local conditions at every stop (valleys vs. lake area) | Distance and altitude difference are stored per stop, so weak matches can be identified (D4) |
+| **Missing hours or values** | Ingestion fails if a station doesn't have every hour of the day; validation checks the core parameters and plausible ranges |
+| **Revisions:** recent values may be corrected later | Each run replaces the whole day, so corrected values replace old ones (D14) |
+| **Time zone:** timestamps are UTC and mark the **end** of the hour (verified in the files) | Ingestion assigns each hour to the Swiss calendar day it starts in; the staging join converts the train time to the matching hour (D15) |

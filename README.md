@@ -99,7 +99,7 @@ block-beta
     T3["Local · PostgreSQL"]
     R[("<b>raw</b><br/>stops, stop events, weather")]
     space
-    ST[("<b>staging</b><br/>typed, flagged, delays")]
+    ST[("<b>staging</b><br/>typed, flagged, delays,<br/>joined with weather")]
     space
     A["<b>pgAdmin</b><br/>verification queries"]
   end
@@ -179,7 +179,7 @@ with the decision it supports.
 │   └── flows/                      # Kestra flows: rail_weather_stops, rail_weather_daily
 ├── ingestion/                      # pipeline steps: stops, check_source, transport, weather, validate, transform
 ├── sql/                            # schema.sql (tables), verification.sql (queries for reviewers)
-├── transformations/                # SQL views: staging.stop_events
+├── transformations/                # SQL views: staging.stop_events, staging.stop_events_weather
 ├── terraform/                      # GCP infrastructure (planned, final)
 ├── dashboard/                      # Streamlit dashboard (planned, final)
 └── data/                           # downloaded source files, one folder per source, not committed
@@ -187,9 +187,9 @@ with the decision it supports.
 
 ## 7. Setup and execution
 
-> **Status:** everything except the weather ingestion (`ingestion/weather.py`) is in place and
-> tested on real data. Until it exists, the `ingest_weather` task fails, and the tasks after it
-> don't run in Kestra.
+> **Status (midterm):** the local pipeline runs end to end in Kestra and was tested on eight
+> operating days (8 and 11–18 October 2026), including a rerun of a loaded day and a backfill.
+> The cloud part follows in the final version.
 
 **Requirements:** Docker with Docker Compose v2 (Docker Desktop includes both). For the
 notebooks only: Python 3.13.
@@ -224,7 +224,11 @@ docker compose ps                # wait until postgres and kestra-db are healthy
 | Service | Address | Login |
 |---|---|---|
 | Kestra | [localhost:8080](http://localhost:8080) | `KESTRA_USER` / `KESTRA_PASSWORD` from `.env` |
-| pgAdmin | [localhost:8086](http://localhost:8086) | `PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD`; register a server with host `postgres`, port `5432` and the `POSTGRES_*` values |
+| pgAdmin | [localhost:8086](http://localhost:8086) | `PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD` |
+
+pgAdmin starts without a server. Choose **Add New Server**, give it any name, and on the
+**Connection** tab enter host `postgres` (the service name inside the Docker network, not
+`localhost`), port `5432`, and `POSTGRES_DB`, `POSTGRES_USER` and `POSTGRES_PASSWORD` from `.env`.
 
 **4. Add the flows to Kestra**
 
@@ -235,17 +239,21 @@ In Kestra, open **Flows → Create**, paste the content of
 **5. Run the pipeline**
 
 1. Execute `rail_weather_stops` once. It loads the 51 stops and their weather stations.
-2. Execute `rail_weather_daily` with an `operating_day` from the last few days.
-3. Execute the same day again: the row counts stay the same, because each run replaces that day.
-4. Backfill: in `rail_weather_daily`, open **Triggers**, choose **Backfill** on `daily_schedule` and
-   select two or three past days. Each scheduled date loads the day before it.
+2. Execute `rail_weather_daily` and type an `operating_day` from the last few days as
+   `YYYY-MM-DD`, e.g. `2026-10-16`. The input is a text field and rejects any other format.
+3. Execute the same day again: the logs say how many rows of the earlier load were replaced, and
+   the row counts stay the same, because each run replaces that day.
+4. Backfill: in `rail_weather_daily`, open **Triggers** and choose **Backfill executions** on
+   `daily_schedule`, e.g. start `2026-10-12 00:00`, end `2026-10-13 23:59`, then
+   **Execute backfill**. Each scheduled date (09:00) loads the day before it, so this loads 11 and
+   12 October. Leave `operating_day` as it is: backfills ignore it.
 
 Each daily file is about 660 MB to download, so keep test runs to a few days.
 
 **6. Verify**
 
-Run the queries in `sql/verification.sql` in pgAdmin: rows per operating day, the 51 stops, and the
-quality checks. The `validate_day` task runs the same checks after every load and fails the
+Run the queries in `sql/verification.sql` in pgAdmin: rows per operating day, the 51 stops, the
+hourly weather (120 rows per day: 5 stations × 24 hours), the weather join and the quality checks. The `validate_day` task runs the same checks after every load and fails the
 execution if one doesn't pass. Screenshots of tested runs are in [docs/evidence/](docs/evidence/).
 
 **Stop and reset**
@@ -266,26 +274,24 @@ See [docs/project_plan.md](docs/project_plan.md). Our workflow and commit messag
 convention ([Conventional Commits](https://www.conventionalcommits.org/)) are described in
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## 9. Known risks and limitations
+## 9. Known limitations
 
-- No cause-of-delay information; results are correlational.
-- Planned closures can't be told apart from disruptions: Ist-Daten has no planned/unplanned flag.
-  On 8 October 2026, 496 of 558 cancellations at our stops were the whole S9 line for the day.
-  A rule for line-wide closures is being defined.
-- Journeys without real-time data are missing entirely from Ist-Daten.
-- About 1 % of times are only forecasts (`PROGNOSE`), not measurements; they are flagged and get no delay value.
-- Automatic snow-depth measurements are not quality-checked by MeteoSwiss and struggle with the first
-  centimetres in the lowlands; snow is therefore derived and is the least reliable weather type.
-- Thunderstorms and icy conditions are not measured directly and are approximated.
-- Severity levels follow MeteoSwiss's warning levels, which are defined for regional forecasts; we apply
-  them to measured station values.
-- Weather is measured at five stations (up to 14 km from a stop) and may not represent conditions at every stop.
-- MeteoSwiss timestamps are in UTC, Ist-Daten times in Swiss local time; they are converted before the join.
-- Arrivals and departures behave differently (on 8 October, median delay 0.9 min on arrival and
-  1.5 min on departure) and are analysed separately, which also handles Luzern as a terminal station.
-- The Ist-Daten download link is read from the dataset page; a redesign of that page would break the
-  lookup, and the source check fails with a clear message if it does.
-- The dashboard's "current risk" is not a live train-delay prediction: it combines the latest weather measurement with historical probabilities computed by the batch pipeline.
+Most limitations come from the sources themselves. The right column shows how the pipeline deals
+with each one.
+
+| Limitation | How we handle it |
+|---|---|
+| Ist-Daten has no cause of delay | Results are reported as correlations and conditional probabilities, not causal effects |
+| Planned closures look like disruptions (8 Oct 2026: 496 of 558 cancellations were the whole S9 line) | A rule for line-wide closures is being defined; those rows are kept but left out of the weather comparison |
+| Journeys without real-time data are missing from Ist-Daten entirely | Can't be detected in the data; documented |
+| About 1 % of times are only forecasts (`PROGNOSE`) | Flagged and kept, without a delay value, so they stay countable (D7) |
+| Weather is measured at five stations, up to 14 km from a stop | Distance and altitude difference are stored per stop, so weak matches can be identified (D4) |
+| Snow, thunderstorms and icy conditions aren't measured directly; automatic snow depth isn't quality-checked | Derived from precipitation, temperature and gusts; snow is treated as the least reliable weather type |
+| MeteoSwiss warning levels are defined for regional forecasts | Applied to measured station values; documented with the severity levels |
+| Weather (UTC, hour labelled by its end) and trains (Swiss local time) use different times | Converted in the staging join (D15); a train after midnight gets its weather once the next day is loaded |
+| Weather ingestion reads the "recent" files, so backfills work within the current year | The yearly "historical" files are added for the final, together with the one-year backfill |
+| Download links are read from the dataset pages | The source check fails with a clear message if a page changes (D8) |
+| The dashboard's "current risk" is not a live prediction | It combines the latest weather measurement with historical probabilities from the batch pipeline |
 
 ## 10. Data attribution
 

@@ -3,6 +3,35 @@
 Design decisions for the pipeline, with the reason and where the idea comes from.
 Newest first within each section. Status is **Decided** unless marked otherwise.
 
+## Weather (19 Oct 2026, after the first full runs)
+
+### D15 · Join weather by the scheduled time of the stop event
+`staging.stop_events_weather` gives every stop event the weather of its station
+(`raw.stops.weather_station`, D4) in the hour of its **scheduled** time: the departure, or the
+arrival at the terminus. Every row has a scheduled time, including cancelled trains, which have no
+actual time; and the weather in the hour the train should have been there is the weather that could
+have delayed or cancelled it.
+
+MeteoSwiss labels each hour by its **end**, in UTC. A train at 07:40 Swiss time falls in the hour
+07:00–08:00, labelled 06:00 UTC in summer and 07:00 UTC in winter. The view takes the start of the
+local hour, adds one hour and converts it to UTC; tested with summer time, winter time, a cancelled
+train, an hour boundary and a train after midnight.
+
+It is a `LEFT JOIN` on station and hour, the key of `raw.weather_hourly`, so a stop event matches at
+most one weather row: no row is lost or duplicated, and `transform.py` fails the run if the counts
+differ (D7). A train after midnight gets the next calendar day's weather and stays without weather
+until that day is loaded.
+
+### D14 · Weather from the "recent" file, the day replaced like transport
+For each of the 5 stations, `weather.py` finds the hourly "recent" file (1 January to yesterday,
+updated daily, at about 04:40 Swiss time on 19 October) through the STAC API instead of a stored URL
+(D8), keeps the hours that belong to the Swiss calendar day and the 7 parameters we need, with the
+values unchanged, and replaces the day in one transaction (D10). Reloading picks up MeteoSwiss
+corrections. A parameter a station doesn't measure stays NULL (`tre005hn` only at LUZ, snow depth
+not at EGO and MOA); validation requires only the five parameters every station measures.
+The "historical" files for earlier years are not read yet, so a backfill only works within the
+current year.
+
 ## History (15 Oct 2026, after checking the archive)
 
 ### D13 · History from the monthly v2 archive, recent days from the daily files
@@ -44,7 +73,10 @@ Kestra coordinates; our scripts do the work. Every script also runs without Kest
 
 ### D11 · One operating day per run, chosen by the scheduled date
 Each script takes `--date YYYY-MM-DD`. A scheduled run processes the day before `trigger.date`,
-because Ist-Daten publishes yesterday's file. A manual run uses the `operating_day` input.
+because Ist-Daten publishes yesterday's file. A manual run uses the `operating_day` input, a text
+field checked against `YYYY-MM-DD`. It was a `DATE` input first, but Kestra's backfill form sent it
+as a UTC timestamp (`2026-10-07T22:00:00.000Z`) and then rejected it, so no backfill execution was
+created (found on 19 October).
 The scripts never use the machine's current date, so a backfill over past dates processes exactly
 those days. Backfill and retry are different things: a backfill processes a missed historical day,
 a retry repeats a failed attempt at the same day.
@@ -66,7 +98,7 @@ A rerun therefore never creates duplicates, and corrected source data replaces t
 | Validation failure | No. Checking the same data again gives the same answer |
 
 ### D8 · Check the source first, validate after loading
-The daily flow is `check_transport_source → ingest_transport → ingest_weather → validate_day`.
+The daily flow is `check_transport_source → ingest_transport → ingest_weather → validate_day → transform`.
 The check finds the day's file link on the dataset page before anything is downloaded. The server
 refuses `HEAD` requests (403), so unlike the course's `check_source.py` the check uses a streamed
 `GET` that reads only the headers. The service points file is found the same way: its download URL
@@ -122,6 +154,9 @@ if data is a day old. Streaming would add cost and complexity without benefit.
   and leave them out of the weather comparison. Check two or three more days first.
 - History to load: one year (October 2025 to September 2026) is now possible from the v2 archive
   (D13). Midterm: a few days plus a short backfill; the full year belongs to the final.
-- Schedule time: yesterday's file is there by about 05:15 Swiss time, so the 09:00 placeholder is
-  safe. Files can be republished later (the file for 13 October changed again on 15 October);
-  reloading the day before yesterday as well would pick up such corrections.
+- Republished files: the Ist-Daten file for 13 October changed again on 15 October. Reloading the
+  day before yesterday as well would pick up such corrections. (The 09:00 schedule itself is safe:
+  transport is there by about 05:15, weather by about 04:40.)
+- Comparing like with like: in the first eight days, weekends had far fewer late departures than
+  weekdays, a bigger difference than between wet and dry days. Proposal: compare weather conditions
+  within the same day type and hour of day, not across all trains.

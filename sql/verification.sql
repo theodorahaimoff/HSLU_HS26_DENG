@@ -72,3 +72,55 @@ FROM staging.stop_events
 GROUP BY operating_day, line
 HAVING COUNT(*) FILTER (WHERE is_cancelled) > 0
 ORDER BY operating_day, pct_cancelled DESC;
+-- 9. Transport and weather per day. Expect 120 weather rows per day (5 stations x 24 hours;
+--    115 or 125 on the days the clocks change) and no day with stop events but no weather.
+SELECT d.operating_day,
+       (SELECT COUNT(*) FROM raw.stop_events e WHERE e.operating_day = d.operating_day)    AS stop_events,
+       (SELECT COUNT(*) FROM raw.weather_hourly w WHERE w.operating_day = d.operating_day) AS weather_rows
+FROM (SELECT operating_day FROM raw.stop_events
+      UNION SELECT operating_day FROM raw.weather_hourly) AS d
+ORDER BY d.operating_day;
+
+-- 10. No duplicate weather hours. Expect no rows: (station, hour) is the table key.
+SELECT station, observed_at, COUNT(*) AS copies
+FROM raw.weather_hourly
+GROUP BY station, observed_at
+HAVING COUNT(*) > 1;
+
+-- 11. Weather per station and day. Expect plausible values for the season and similar values at
+--     neighbouring stations (17 Oct 2026 was the rainy, windy day: rain at all five, gusts up to 34 km/h).
+SELECT operating_day, station,
+       COUNT(*)                          AS hours,
+       round(SUM(rre150h0)::numeric, 1)  AS rain_mm,
+       MIN(tre200hn)                     AS min_temp_c,
+       MAX(tre200hx)                     AS max_temp_c,
+       MAX(fu3010h1)                     AS max_gust_kmh
+FROM raw.weather_hourly
+GROUP BY operating_day, station
+ORDER BY operating_day, station;
+
+-- 12. The weather join keeps every row. Expect the two counts to be equal for every day.
+SELECT r.operating_day, r.raw_rows, j.joined_rows, r.raw_rows = j.joined_rows AS equal
+FROM (SELECT operating_day, COUNT(*) AS raw_rows FROM raw.stop_events GROUP BY operating_day) AS r
+JOIN (SELECT operating_day, COUNT(*) AS joined_rows FROM staging.stop_events_weather GROUP BY operating_day) AS j
+  USING (operating_day)
+ORDER BY r.operating_day;
+
+-- 13. Stop events without weather. Expect only trains after midnight (calendar day = operating
+--     day + 1), and only for days whose next day isn't loaded yet (about 200 per day).
+SELECT operating_day, event_scheduled_local::date AS calendar_day, COUNT(*) AS stop_events
+FROM staging.stop_events_weather
+WHERE precipitation_mm IS NULL AND temperature_c IS NULL
+GROUP BY operating_day, calendar_day
+ORDER BY operating_day;
+
+-- 14. First look at the use case: weather and departure delays per day. Eight days prove nothing;
+--     note that weekends (fewer late trains) differ more from weekdays than wet days from dry ones.
+SELECT operating_day,
+       round(AVG(precipitation_mm)::numeric, 2)                          AS avg_rain_mm,
+       round(MAX(gust_max_kmh)::numeric, 1)                              AS max_gust_kmh,
+       percentile_cont(0.5) WITHIN GROUP (ORDER BY departure_delay_min)  AS median_departure_delay_min,
+       round(100.0 * AVG((departure_delay_min >= 3)::int), 1)            AS pct_departures_3min_or_more
+FROM staging.stop_events_weather
+GROUP BY operating_day
+ORDER BY operating_day;
